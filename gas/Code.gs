@@ -13,18 +13,16 @@
  */
 
 // ══════════════════════════════════════════════════════════════════
-// ⚠️ 확인 필요 (Clara/HK) — 아래 2개는 추정값. M1 전에 HK GAS 원본과 대조할 것.
+// 설정 (Fable 회신 2026-07-04 로 확정)
 // ══════════════════════════════════════════════════════════════════
 
-// (1) Firebase RTDB 베이스 URL.
-//     HK GAS의 fbGet/fbSet 이 쓰는 값과 반드시 동일해야 한다.
-//     HK Code.gs 상단에서 그대로 복사해 덮어쓸 것.
-//     (newer 프로젝트는 …-default-rtdb.firebaseio.com, older US 프로젝트는 …firebaseio.com)
-var FB_BASE = 'https://paradise-walk-residence-default-rtdb.firebaseio.com';
+// Firebase RTDB 베이스 URL — asia-southeast1 리전 (firebaseio.com 형식 아님).
+// HK 프론트 firebaseConfig 원문 확인값. FB_AUTH 는 스크립트 속성에서만 read.
+var FB_BASE = 'https://paradise-walk-residence-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-// (2) 폴링 대상 Gmail 라벨 (§6f 필터로 자동 부여). 필요시 Clara가 라벨명 확정.
+// 폴링 대상 Gmail 라벨 (§6f 필터로 자동 부여) + 멱등성 라벨(Fable 승인 → 유지).
 var CS_LABEL = 'CS/부킹';
-var CS_DONE_LABEL = 'CS/적재됨'; // 중복 방지용 — 적재 성공 시 부여 (자동 생성)
+var CS_DONE_LABEL = 'CS/적재됨'; // 적재 성공 시 부여 (없으면 자동 생성)
 
 // ══════════════════════════════════════════════════════════════════
 // Firebase 헬퍼 (HK GAS와 동일 패턴: fbGet/fbSet/fbUpdate/fbDelete + ?auth=)
@@ -118,10 +116,12 @@ function ingestMessage_(msg) {
     bookingId: parsed.bookingId || null,
     guest: parsed.guest || null,
     lang: parsed.lang || guessLang_(parsed.message || raw.body),
+    replyTo: parsed.guestEmail || null,      // 게스트 회신 주소(=발신주소). M2 발송 경로.
     receivedAt: raw.receivedAt,
     raw: raw,                 // §6c: 파싱 실패해도 raw 는 항상 보존 — 메일 유실 금지
     parsed: parsed.ok ? { message: parsed.message } : null,
     parseFailed: !parsed.ok, // §6c: 파싱실패 플래그
+    bookingIdMismatch: parsed.bookingIdMismatch || false, // From/본문 예약번호 불일치 감지
     ingestedAt: new Date().toISOString()
   };
 
@@ -130,32 +130,51 @@ function ingestMessage_(msg) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 파싱
-// ⚠️ 확인 필요: 아래 정규식은 실제 Booking.com 호스트 알림메일 샘플이 없어
-//    heuristic 으로 작성함. Clara가 실제 메일 1건 전달하면 필드 규칙을 확정한다.
-//    실패해도 parseBooking_ 은 ok:false 를 반환할 뿐, raw 는 ingestMessage_ 에서 보존됨.
+// 파싱 — 실제 Booking.com 호스트 알림메일 구조 (Fable 회신 실물 3건 기준)
+//   From : {예약번호}-{난수}@guest.booking.com  (이 주소로 회신 = 게스트 도달)
+//   제목 : "{게스트명} 님의 메시지가 도착했습니다"
+//   본문 : … "예약 번호: {10자리}" … "{게스트명} 님의 메시지:" {본문} "답변 -->" {링크}
+//   ⚠️ 예약번호는 부킹 원번호(10자리). Firebase Sirvoy 내부번호(5자리)와 다름 → M2 매핑 과제.
+//   실패해도 raw 는 ingestMessage_ 에서 항상 보존됨(§6c).
 // ══════════════════════════════════════════════════════════════════
 
 function parseBooking_(raw) {
-  var out = { ok: false, source: 'booking', bookingId: null, guest: null, lang: null, message: null };
+  var out = { ok: false, source: 'booking', bookingId: null, guest: null,
+              guestEmail: null, lang: null, message: null, bookingIdMismatch: false };
   var body = raw.body || '';
   var subject = raw.subject || '';
+  var from = raw.from || '';
 
-  // 예약번호: "Reservation number: 1234567890" / "예약 번호: 1234567890" / 10자리 숫자
-  var mId = body.match(/(?:reservation\s*number|예약\s*번호)\D*(\d{6,})/i) || body.match(/\b(\d{10})\b/);
-  if (mId) out.bookingId = mId[1];
+  // 예약번호 1차: From 로컬파트 앞 숫자 ({번호}-{난수}@guest.booking.com)
+  var mFrom = from.match(/([0-9]+)(?:-[a-z0-9.]+)?@guest\.booking\.com/i);
+  var fromNum = mFrom ? mFrom[1] : null;
+  // 게스트 회신 주소 = From 의 guest.booking.com 주소 그 자체 (회신 경로 = 발신 주소)
+  var mAddr = from.match(/[\w.\-]+@guest\.booking\.com/i);
+  out.guestEmail = mAddr ? mAddr[0] : null;
 
-  // 게스트명: 제목 "New message from Jane Doe" / 본문 "Guest: Jane Doe" 류
-  var mG = subject.match(/(?:message from|message de|메시지[:\s])\s*(.+?)\s*$/i)
-        || body.match(/(?:guest name|guest|게스트)\s*[:\-]\s*(.+)/i);
+  // 예약번호 2차: 본문 "예약 번호: {숫자}"
+  var mBody = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
+  var bodyNum = mBody ? mBody[1] : null;
+
+  // 교차검증: 둘 다 있고 다르면 플래그(적재는 진행), 하나만 있으면 그것 사용
+  if (fromNum && bodyNum && fromNum !== bodyNum) out.bookingIdMismatch = true;
+  out.bookingId = fromNum || bodyNum || null;
+
+  // 게스트명: 제목 "{게스트명} 님의 메시지가 도착했습니다"
+  var mG = subject.match(/^(.*?)\s*님의\s*메시지가\s*도착했습니다/);
   if (mG) out.guest = mG[1].trim();
 
-  // 메시지 본문: 알림메일 정형 구간을 못 특정하므로 전체 plainBody 를 message 로 넘기고
-  //   실제 구획 규칙은 샘플 확보 후 확정 (예: "---" 구분선 사이만 추출).
-  out.message = body.trim() || null;
+  // 메시지 본문: "님의 메시지:" 다음 ~ "답변 -->" 전까지
+  var startMarker = '님의 메시지:';
+  var si = body.indexOf(startMarker);
+  if (si >= 0) {
+    var after = body.substring(si + startMarker.length);
+    var ei = after.indexOf('답변 -->');
+    out.message = (ei >= 0 ? after.substring(0, ei) : after).trim() || null;
+  }
 
   out.lang = guessLang_(out.message);
-  out.ok = !!(out.bookingId || out.guest); // 최소 식별자 하나라도 잡히면 파싱 성공으로 간주
+  out.ok = !!(out.bookingId && out.message); // 식별자+메시지 둘 다 잡혀야 파싱 성공
   return out;
 }
 
