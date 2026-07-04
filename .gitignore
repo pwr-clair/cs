@@ -1,0 +1,7 @@
+# 시크릿은 레포에 절대 커밋 금지 (§8) — FB_AUTH/API키/봇토큰은 GAS 스크립트 속성에만
+.env
+.env.*
+*.secret
+.clasp.json
+.DS_Store
+node_modules/
