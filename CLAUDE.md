@@ -48,6 +48,8 @@ OTA 알림메일 → Gmail(라벨/필터) → GAS 1분 폴링 → 파싱 → Fir
 → [승인 or 야간 자동] → Gmail 회신 발송 → cs/sent
 - Firebase: 기존 프로젝트 paradise-walk-residence 공유, cs/* 네임스페이스만 사용.
 - 발송 도달성: OTA 알림메일의 회신 경로로 게스트 도달 확실(클라라 확인). M1에서 1회만 재확인.
+- GAS 명명: HK GAS = PWR-HK-Engine (구 ParadiseWalk-CS, 2026-07-04 개명). CS GAS = PWR-CS-Engine.
+  과거 문서에 ParadiseWalk-CS로 표기된 것은 전부 HK 쪽을 가리킴.
 
 ## 5. cs/ 네임스페이스
 cs/

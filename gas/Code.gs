@@ -21,7 +21,7 @@
 var FB_BASE = 'https://paradise-walk-residence-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 // 폴링 대상 Gmail 라벨 (§6f 필터로 자동 부여) + 멱등성 라벨(Fable 승인 → 유지).
-var CS_LABEL = 'CS/부킹';
+var CS_LABEL = 'cs/booking';   // 실제 라벨명 (Fable 2026-07-05 확정)
 var CS_DONE_LABEL = 'CS/적재됨'; // 적재 성공 시 부여 (없으면 자동 생성)
 
 // ══════════════════════════════════════════════════════════════════
@@ -75,11 +75,13 @@ function pollCsInbox() {
 
   var doneLabel = GmailApp.getUserLabelByName(CS_DONE_LABEL) || GmailApp.createLabel(CS_DONE_LABEL);
 
-  // 아직 적재 안 된(=CS_DONE_LABEL 미부여) 스레드만
-  var threads = GmailApp.search('label:"' + CS_LABEL + '" -label:"' + CS_DONE_LABEL + '"', 0, 20);
+  // 슬래시 포함 라벨명은 Gmail 검색 문법으로 못 찾음(중첩라벨 기벽) → 라벨 객체로 직접 조회
+  var threads = label.getThreads(0, 20);
   if (!threads.length) return;
 
   for (var t = 0; t < threads.length; t++) {
+    // 이미 적재된(=CS_DONE_LABEL 부여) 스레드는 skip (기존 검색의 -label 대체)
+    if (threadHasLabel_(threads[t], CS_DONE_LABEL)) continue;
     var msgs = threads[t].getMessages();
     for (var m = 0; m < msgs.length; m++) {
       try {
@@ -192,11 +194,20 @@ function guessLang_(text) {
 
 function safeId_(msg) { try { return msg.getId(); } catch (e) { return '?'; } }
 
+// 스레드에 특정 이름의 라벨이 붙어있는지 (getLabels() 이름 비교 — 검색 -label 대체)
+function threadHasLabel_(thread, name) {
+  var ls = thread.getLabels();
+  for (var i = 0; i < ls.length; i++) if (ls[i].getName() === name) return true;
+  return false;
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 수동 점검용 (트리거 아님) — GAS 에디터에서 직접 실행해 파싱 결과만 로그로 확인
 // ══════════════════════════════════════════════════════════════════
 function debugPeekLatest() {
-  var threads = GmailApp.search('label:"' + CS_LABEL + '"', 0, 1);
+  var label = GmailApp.getUserLabelByName(CS_LABEL);
+  if (!label) { Logger.log('라벨 없음: ' + CS_LABEL); return; }
+  var threads = label.getThreads(0, 1);
   if (!threads.length) { Logger.log('라벨에 메일 없음'); return; }
   var msg = threads[0].getMessages()[0];
   var raw = { from: msg.getFrom(), subject: msg.getSubject(), body: msg.getPlainBody(), receivedAt: msg.getDate().toISOString() };
