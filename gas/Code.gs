@@ -263,3 +263,30 @@ function debugPeekLatest() {
   var raw = { from: msg.getFrom(), subject: msg.getSubject(), body: msg.getPlainBody(), receivedAt: msg.getDate().toISOString() };
   Logger.log(JSON.stringify(parseBooking_(raw), null, 2));
 }
+
+// ══════════════════════════════════════════════════════════════════
+// M2 선행 확인용 (트리거 아님) — pendingBookings 에 "부킹 원번호(10자리)" 필드 존재 여부 점검.
+//   Clara가 GAS 에디터에서 1회 실행 → 실행 로그를 Fable/클코에 전달.
+//   (클코 샌드박스는 FB_AUTH 없어 Firebase 직접 읽기 불가 → GAS에서 확인 필요)
+// ══════════════════════════════════════════════════════════════════
+function debugPeekPending() {
+  var candidates = ['pendingBookings', 'app/pendingBookings', 'app/pending'];
+  var data = null, usedPath = null;
+  for (var c = 0; c < candidates.length; c++) {
+    try { var d = fbGet(candidates[c]); if (d) { data = d; usedPath = candidates[c]; break; } }
+    catch (e) { Logger.log('read fail ' + candidates[c] + ': ' + e); }
+  }
+  if (!data) { Logger.log('pendingBookings 데이터를 못 찾음 — 실제 경로를 알려주세요 (시도: ' + candidates.join(', ') + ')'); return; }
+
+  var keys = Object.keys(data).slice(0, 5);
+  Logger.log('경로=' + usedPath + ' / 총 ' + Object.keys(data).length + '건 중 샘플 ' + keys.length + '건');
+  for (var i = 0; i < keys.length; i++) {
+    var rec = data[keys[i]];
+    // 값이 10자리 숫자인 필드 = 부킹 원번호 후보
+    var tenDigitFields = [];
+    for (var f in rec) { if (/^\d{10}$/.test(String(rec[f]))) tenDigitFields.push(f + '=' + rec[f]); }
+    Logger.log('── [' + keys[i] + '] 필드=' + Object.keys(rec).join(',')
+      + ' | 10자리필드=' + (tenDigitFields.join(', ') || '(없음)'));
+    Logger.log(JSON.stringify(rec));
+  }
+}
