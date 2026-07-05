@@ -124,6 +124,12 @@ function ingestMessage_(msg) {
     parsed: parsed.ok ? { message: parsed.message } : null,
     parseFailed: !parsed.ok, // §6c: 파싱실패 플래그
     bookingIdMismatch: parsed.bookingIdMismatch || false, // From/본문 예약번호 불일치 감지
+    rawTail: parsed.rawTail || false, // 종료마커 못 찾아 message 전체 유지됨 플래그
+    checkinDate: parsed.checkinDate || null,   // 예약 상세: 체크인 (YYYY-MM-DD)
+    checkoutDate: parsed.checkoutDate || null, // 예약 상세: 체크아웃 (YYYY-MM-DD)
+    guestCount: parsed.guestCount || null,     // 예약 상세: 총 투숙객 수
+    roomCount: parsed.roomCount || null,       // 예약 상세: 총 객실 수
+    propertyName: parsed.propertyName || null, // 예약 상세: 숙소 명칭
     ingestedAt: new Date().toISOString()
   };
 
@@ -142,7 +148,9 @@ function ingestMessage_(msg) {
 
 function parseBooking_(raw) {
   var out = { ok: false, source: 'booking', bookingId: null, guest: null,
-              guestEmail: null, lang: null, message: null, bookingIdMismatch: false };
+              guestEmail: null, lang: null, message: null, bookingIdMismatch: false,
+              rawTail: false, checkinDate: null, checkoutDate: null,
+              guestCount: null, roomCount: null, propertyName: null };
   var body = raw.body || '';
   var subject = raw.subject || '';
   var from = raw.from || '';
@@ -166,15 +174,35 @@ function parseBooking_(raw) {
   var mG = subject.match(/^(.*?)\s*님의\s*메시지가\s*도착했습니다/);
   if (mG) out.guest = mG[1].trim();
 
-  // 메시지 본문: "님의 메시지:" 다음 ~ "답변 -->" 전까지
+  // Edit 3 — 예약 상세 정보 블록 필드 추출 (메시지 자르기 전, 전체 본문 기준)
+  var allLines = body.split('\n');
+  out.checkinDate  = normDate_(findLineValue_(allLines, '체크인'));
+  out.checkoutDate = normDate_(findLineValue_(allLines, '체크아웃'));
+  out.guestCount   = findLineValue_(allLines, '총 투숙객 수');
+  out.roomCount    = findLineValue_(allLines, '총 객실 수');
+  out.propertyName = findLineValue_(allLines, '숙소 명칭');
+
+  // Edit 1 — 메시지 본문: "님의 메시지:" 이후 ~ 최초 종료마커 전까지 (줄 단위 매칭).
+  //   결함 대응: "답변 -->"가 실제론 "답변\n\n-->"로 줄바꿈됨 → 문자열 indexOf 실패.
+  //   종료마커: ①독립 줄 "답변"  ②"예약 상세 정보"  ③"© Copyright"  (가장 먼저 등장하는 지점)
   var startMarker = '님의 메시지:';
   var si = body.indexOf(startMarker);
   if (si >= 0) {
-    var after = body.substring(si + startMarker.length);
-    var ei = after.indexOf('답변 -->');
-    out.message = (ei >= 0 ? after.substring(0, ei) : after).trim() || null;
+    var afterLines = body.substring(si + startMarker.length).split('\n');
+    var cut = -1;
+    for (var li = 0; li < afterLines.length; li++) {
+      var ln = afterLines[li].trim();
+      if (ln === '답변' || ln.indexOf('예약 상세 정보') === 0 || ln.indexOf('© Copyright') === 0) { cut = li; break; }
+    }
+    if (cut >= 0) {
+      out.message = afterLines.slice(0, cut).join('\n').trim() || null;
+    } else {
+      out.message = afterLines.join('\n').trim() || null; // 마커 없음 → 전체 유지
+      out.rawTail = true;
+    }
   }
 
+  // Edit 2 — 언어 감지는 절단된 clean message 기준 (꼬리 한국어 오염 방지)
   out.lang = guessLang_(out.message);
   out.ok = !!(out.bookingId && out.message); // 식별자+메시지 둘 다 잡혀야 파싱 성공
   return out;
@@ -200,6 +228,28 @@ function threadHasLabel_(thread, name) {
   for (var i = 0; i < ls.length; i++) if (ls[i].getName() === name) return true;
   return false;
 }
+
+// 라벨 줄 값 추출: "라벨: 값"(같은 줄) 또는 라벨 다음 첫 비어있지 않은 줄. 없으면 null.
+function findLineValue_(lines, label) {
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (t.indexOf(label) === 0) {
+      var rest = t.substring(label.length).replace(/^[:：]\s*/, '').trim();
+      if (rest) return rest;
+      for (var j = i + 1; j < lines.length; j++) { var n = lines[j].trim(); if (n) return n; }
+      return null;
+    }
+  }
+  return null;
+}
+
+// 날짜 정규화 → YYYY-MM-DD (YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / "YYYY년 M월 D일" 지원). 실패 null.
+function normDate_(s) {
+  if (!s) return null;
+  var m = s.match(/(\d{4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/);
+  return m ? (m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3])) : null;
+}
+function pad2_(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 
 // ══════════════════════════════════════════════════════════════════
 // 수동 점검용 (트리거 아님) — GAS 에디터에서 직접 실행해 파싱 결과만 로그로 확인
