@@ -1,0 +1,43 @@
+# (선택적 하드닝) GitHub Pages를 Actions 소스로 전환할 때 쓸 워크플로.
+#
+# 배경: cs 레포 Pages deploy 반복 실패의 원인은 legacy 브랜치 빌드에 동시성 가드가
+#   없어, 한 커밋에 배포 run이 2개 겹치면(예: push 자동트리거 + 수동 POST /pages/builds)
+#   github-pages 환경에서 충돌 → 하나가 "Deployment failed, try again later"로 실패.
+# 1차 조치(적용됨): 수동 nudge 금지 + legacy 유지(=1 push당 1 run). 충돌 제거됨.
+# 2차(선택): 아래 워크플로로 Actions 소스 전환 시 concurrency 가드로 동시 push도 직렬화.
+#
+# 적용 방법 (클코 토큰은 workflow 스코프가 없어 이 경로 파일을 push 못 함):
+#   A) Clara가 이 파일을 .github/workflows/pages.yml 로 직접 커밋, 또는
+#   B) 클코 토큰에 workflow 스코프 부여 후 클코가 커밋.
+#   그 다음 Settings→Pages Source를 "GitHub Actions"로 변경 (또는 PUT /pages build_type=workflow).
+
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - id: deployment
+        uses: actions/deploy-pages@v4
