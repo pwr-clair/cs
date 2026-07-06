@@ -6,7 +6,10 @@ name: Deploy Pages
 on:
   push:
     branches: [main]
-  workflow_dispatch:
+    paths:                 # M2b 전까지 웹 자산 변경 시에만 배포 (gas/**·docs/** 커밋은 무시)
+      - "index.html"
+      - "assets/**"
+  workflow_dispatch:       # 수동 실행은 항상 가능
 
 permissions:
   contents: read

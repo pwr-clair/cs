@@ -34,3 +34,11 @@
 4. **Fable 결정 요청**: M2b 착수 시 Pages 배포가 계속 flaky하면 → ⓐ retry 감수하고 진행 / ⓑ 대체 호스팅(예: 별도 정적 호스트) 검토 / ⓒ GitHub Support 선처리. 무엇으로 갈지.
 
 > 주: 이 보고서 커밋도 배포를 재트리거하며, GitHub 백엔드 상태에 따라 성공/실패가 갈릴 수 있음(코드와 무관).
+
+## 추가 결정 (2026-07-06, Fable 승인) — 배포 게이트를 웹 자산 변경으로 한정
+백엔드 flakiness가 통제 밖이고 M2b 전까지 서빙할 웹 자산이 없으므로, **불필요한 배포 자체를 차단**한다.
+- `.github/workflows/pages.yml`의 `on: push` 에 **paths 필터** 추가: `index.html`, `assets/**` 변경 시에만 배포.
+- `workflow_dispatch`(수동)는 유지, `concurrency: group pages` 가드 유지.
+- 효과: **`gas/**`·`docs/**` 커밋은 Deploy Pages를 트리거하지 않음** → 실패 이메일 소멸. 이 커밋들의 검증은 `SHA==HEAD`(push 성공)만으로 충분.
+- **M2b에서 `index.html` 커밋 시 배포 자동 재개.**
+- ⛳ **CS 레포 배포 규칙 변경(이후 공통)**: Pages 배포 게이트는 이제 "웹 자산(`index.html`/`assets/**`) 변경 커밋에만 적용". 그 외 커밋은 배포 검증 대상 아님(§8 배포검증은 웹 자산 커밋에 한함).
