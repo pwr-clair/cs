@@ -1,0 +1,33 @@
+# GitHub Pages 배포 — Actions 소스 + 동시성 가드 (A안, 2026-07-06)
+# legacy 브랜치 배포가 단일 run에서도 연속 실패(9e3d16d, 8631d11: build 성공/deploy "try again later").
+# Actions 소스로 전환하고 concurrency group=pages 로 배포를 직렬화해 백엔드 충돌을 제거한다.
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - id: deployment
+        uses: actions/deploy-pages@v4
