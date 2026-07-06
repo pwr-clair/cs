@@ -6,23 +6,31 @@
 ## before → after
 | 항목 | before | after |
 |---|---|---|
-| Pages Source | legacy 브랜치 빌드 (main / root), 동시성 가드 없음 | **GitHub Actions** (`build_type=workflow`) |
-| 배포 워크플로 | 자동 "pages build and deployment"(dynamic) | `.github/workflows/pages.yml` — `actions/upload-pages-artifact`+`deploy-pages`, **`concurrency: group pages, cancel-in-progress:false`** |
+| Pages Source | legacy 브랜치 (main / root), 동시성 가드 없음 | **GitHub Actions** (`build_type=workflow`) |
+| 배포 워크플로 | 자동 "pages build and deployment"(dynamic) | `.github/workflows/pages.yml` — `upload-pages-artifact`+`deploy-pages`, **`concurrency: group pages, cancel-in-progress:false`** |
 | 기능 코드 | — | **무변경** (gas/Code.gs 등 손대지 않음) |
 
-## 검증
-- 전환 커밋 `cd213c3` push → run **"Deploy Pages" 정확히 1개**(legacy dynamic run 사라짐).
-- run 결과: **build success + deploy success**.
-- 올바른 검증 오라클로 확인(중요): legacy `/pages/builds/latest`는 Actions 소스에서 **갱신 안 됨**(옛 SHA 8631d11로 고착) → **github-pages deployment API** 사용:
-  - 최신 github-pages deployment **`sha = cd213c3 == HEAD`** ✅
-  - deployment **state = success**, env_url `https://pwr-clair.github.io/cs/`
-  - deploy 로그: `Created deployment for cd213c3… / Reported success!` (기존 "Deployment failed, try again later" 소멸)
-- 본 보고서 커밋 = 지시문 step3 "검증 커밋 1회"를 겸함 → 후속 push에서도 파이프라인 초록·SHA 일치 재확인(아래 갱신).
+## 검증 (정직한 결과 — 부분 성공 + 잔여 이슈)
+- ✅ 전환 커밋 `cd213c3` → run "Deploy Pages" **1개**(legacy dynamic run 사라짐) → **build+deploy success**, github-pages deployment **sha=cd213c3==HEAD, state=success**, 로그 `Reported success!`. → **전환 자체는 동작 확인.**
+- ❌ 검증 커밋 `fc3252b`(step3) → 같은 워크플로인데 **deploy 실패**: `Getting Pages deployment status... ##[error]Deployment failed, try again later.` (deployment state: waiting→queued→in_progress→**failure**). **rerun-failed-jobs 재시도도 failure.**
+- 검증 오라클: legacy `/pages/builds/latest`는 Actions 소스에서 갱신 안 됨 → github-pages **deployments API의 `sha`+status `state`**로 판정(정정).
+
+## 근본원인 재평가 (내 이전 진단 정정)
+연속 배포 실패의 원인을 좁혀본 결과, **아래 어느 것도 아님**:
+- 동시성/nudge twin ❌ (단일 run·nudge 없이도 실패) — 이전 진단은 부분적.
+- 소스 타입 ❌ (legacy·Actions 둘 다 실패; Actions에서도 cd213c3 성공/fc3252b 실패).
+- Pages 시간당 배포 rate limit ❌ (실측 최대 3/시간, 문제 시간대 2/시간 — 한계 무관). ← 이전 rate-limit 가설 **철회**.
+- GitHub 인시던트 ❌ (githubstatus: All Operational, Pages/Actions operational, 미해결 인시던트 0).
+- **결론: 특정 시점에 GitHub Pages 백엔드가 배포를 간헐/지속 거부("try again later"). 우리 설정으로 제어 불가한 GitHub 측 현상.** build/artifact는 매번 정상.
 
 ## 배포
-- 커밋: `cd213c3` (`ci: switch Pages deploy to Actions source with concurrency guard (A-plan)`).
-- URL: https://pwr-clair.github.io/cs/ — 루트 **HTTP 404는 정상**(서빙할 `index.html` 없음, M2b 범위). 배포 자체는 성공.
+- 전환 커밋 `cd213c3`: **배포 성공**(state=success). URL https://pwr-clair.github.io/cs/ (루트 404는 정상 — index.html 없음, M2b).
+- 검증 커밋 `fc3252b`: **배포 실패**(위 로그). 현재 최신 성공 배포는 cd213c3.
 
-## 제안
-- **§8 배포 검증 절차 갱신 필요**: Actions 소스에서는 `pages_build_version`(legacy builds API) 대신 **`GET /repos/pwr-clair/cs/deployments?environment=github-pages`의 최신 deployment `sha`가 HEAD와 일치 + status state=success**로 확인해야 함. (legacy builds/latest는 이제 신뢰 불가.) 메모리에 반영해 둠.
-- 이후 모든 배포는 이 경로로 검증하며, 수동 nudge/legacy 재시도는 하지 않음.
+## 제안 / 결정 요청
+1. **전환은 유지** — legacy보다 개선(동시성 가드 확보, cd213c3로 정상 배포 입증). 되돌리지 않기를 제안.
+2. **잔여 백엔드 flakiness는 우리 코드로 못 고침.** Pages는 M2b 전까지 서빙 콘텐츠가 없어 **M2a·기능에 영향 없음.**
+3. 향후 배포 실패 시: (a) 잠시 후 rerun, (b) 지속되면 GitHub Support에 repo Pages 백엔드 이슈 문의. **더 이상 무의미한 재푸시/재시도는 안 함**(실패 메일 방지).
+4. **Fable 결정 요청**: M2b 착수 시 Pages 배포가 계속 flaky하면 → ⓐ retry 감수하고 진행 / ⓑ 대체 호스팅(예: 별도 정적 호스트) 검토 / ⓒ GitHub Support 선처리. 무엇으로 갈지.
+
+> 주: 이 보고서 커밋도 배포를 재트리거하며, GitHub 백엔드 상태에 따라 성공/실패가 갈릴 수 있음(코드와 무관).
