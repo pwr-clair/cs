@@ -77,8 +77,6 @@ function pollCsInbox() {
 
   // 슬래시 포함 라벨명은 Gmail 검색 문법으로 못 찾음(중첩라벨 기벽) → 라벨 객체로 직접 조회
   var threads = label.getThreads(0, 20);
-  if (!threads.length) return;
-
   for (var t = 0; t < threads.length; t++) {
     // 이미 적재된(=CS_DONE_LABEL 부여) 스레드는 skip (기존 검색의 -label 대체)
     if (threadHasLabel_(threads[t], CS_DONE_LABEL)) continue;
@@ -95,6 +93,9 @@ function pollCsInbox() {
     }
     if (!threads[t]._hadFailure) threads[t].addLabel(doneLabel);
   }
+
+  // M2a: 신규 inbox → Claude 초안 생성 (수신과 분리 — API 실패해도 적재는 유지)
+  try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); }
 }
 
 function ingestMessage_(msg) {
@@ -289,4 +290,244 @@ function debugPeekPending() {
       + ' | 10자리필드=' + (tenDigitFields.join(', ') || '(없음)'));
     Logger.log(JSON.stringify(rec));
   }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// M2a — 코퍼스 + 초안 생성 + 텔레그램 푸시
+// ══════════════════════════════════════════════════════════════════
+
+var CLAUDE_MODEL   = 'claude-haiku-4-5-20251001'; // 저비용 라인 (haiku급)
+var CLAUDE_MAXTOK  = 1024;                         // 보수적
+var CS_DB_SHEET_ID = '1JHbIEJ9XX1Pxp0JPPgQmJ-1xWI7e5fKtrws4x-iCcJg'; // CLAUDE.md §7
+var PENDING_PATHS  = ['pendingBookings', 'app/pendingBookings'];      // 실경로 미확정 → 후보
+var DRAFT_BATCH    = 5;  // 폴링 1회당 최대 초안 생성 수 (실행시간·비용 캡)
+
+// ---- 클라라 페르소나 (시스템 프롬프트) ----
+var CLARA_SYSTEM =
+  '당신은 파라다이스워크 레지던스(Paradise Walk Residence)의 호스트 "클라라"입니다. ' +
+  'OTA(부킹닷컴) 게스트 메시지에 클라라의 말투(간결·다정·실용)로 답합니다. ' +
+  '아래 [과거 응대 예시]의 어투와 사실을 최대한 따르세요. ' +
+  '확실치 않은 사실(가격·정책·주소·시설 세부 등)은 지어내지 말고, 확인 후 안내하겠다고 정중히 답합니다. ' +
+  '게스트 언어가 영어가 아니면 reply 끝에 한 줄 번역 면책 문구를 그 게스트 언어로 덧붙이세요. ' +
+  '응답은 반드시 JSON 하나로만 출력: ' +
+  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자}. ' +
+  'JSON 외 다른 텍스트를 출력하지 마세요.';
+
+// ---- (2) 초안 생성 파이프라인: 신규 inbox → cs/drafts ----
+function processInboxToDrafts() {
+  var inbox = fbGet('cs/inbox'); if (!inbox) return;
+  var drafts = fbGet('cs/drafts') || {};
+  var ids = Object.keys(inbox), made = 0;
+  for (var i = 0; i < ids.length && made < DRAFT_BATCH; i++) {
+    var id = ids[i], rec = inbox[id];
+    if (!rec || rec.parseFailed) continue; // 파싱 실패건은 초안 생략(수동 처리)
+    if (drafts[id]) continue;              // 이미 초안 있음(멱등)
+    try { makeDraftFor_(id, rec); made++; }
+    catch (e) { Logger.log('draft 실패 ' + id + ': ' + e); }
+  }
+  if (made) Logger.log('drafts 생성: ' + made + '건');
+}
+
+function makeDraftFor_(msgId, inbox) {
+  var examples = retrieveExamples_(inbox);
+  var d = claudeDraft_(inbox, examples);
+  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room} 또는 null
+
+  var rec = {
+    reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
+    status: 'pending', editedReply: null,
+    lang: inbox.lang || 'en', guest: inbox.guest || null, bookingId: inbox.bookingId || null,
+    replyTo: inbox.replyTo || null,
+    sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
+    room: sirvoy ? sirvoy.room : null,
+    model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
+  };
+  fbSet('cs/drafts/' + msgId, rec);
+
+  // (3) 텔레그램 푸시
+  var first = (((inbox.parsed && inbox.parsed.message) || '').split('\n')[0] || '').trim();
+  if (first.length > 40) first = first.slice(0, 40) + '…';
+  tgNotify_('[PWR CS] ' + (inbox.guest || '게스트') + ' (' + (rec.room || '미상') + ') ' + first + ' → 초안 대기');
+}
+
+// corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)
+function retrieveExamples_(inbox) {
+  var corpus = fbGet('cs/corpus'); if (!corpus) return [];
+  var lang = inbox.lang || 'en';
+  var msg = (((inbox.parsed && inbox.parsed.message) || '')).toLowerCase();
+  var toks = msg.split(/\s+/).filter(function (w) { return w.length > 1; });
+  var arr = [];
+  for (var k in corpus) {
+    var c = corpus[k]; if (!c || !c['최종답변']) continue;
+    var score = (c.lang === lang ? 5 : 0);
+    var hay = (((c['상황요약'] || '') + ' ' + (c['최종답변'] || ''))).toLowerCase();
+    for (var t = 0; t < toks.length; t++) if (hay.indexOf(toks[t]) >= 0) score++;
+    arr.push({ c: c, score: score });
+  }
+  arr.sort(function (a, b) { return b.score - a.score; });
+  var out = []; for (var i = 0; i < arr.length && i < 5; i++) out.push(arr[i].c);
+  return out;
+}
+
+// Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
+function claudeDraft_(inbox, examples) {
+  var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
+  if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
+
+  var ex = '';
+  for (var i = 0; i < examples.length; i++)
+    ex += '상황: ' + (examples[i]['상황요약'] || '') + '\n답변: ' + (examples[i]['최종답변'] || '') + '\n---\n';
+  var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') +
+             '\n[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
+             '\n\n위 지침대로 JSON만 출력하세요.';
+
+  var payload = { model: CLAUDE_MODEL, max_tokens: CLAUDE_MAXTOK, system: CLARA_SYSTEM,
+                  messages: [{ role: 'user', content: user }] };
+  var res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify(payload), muteHttpExceptions: true
+  });
+  if (res.getResponseCode() >= 300) throw new Error('Claude API ' + res.getResponseCode() + ': ' + res.getContentText());
+  var body = JSON.parse(res.getContentText());
+  var text = (body.content && body.content[0] && body.content[0].text) || '';
+  var obj = extractJson_(text);
+  if (!obj) throw new Error('Claude 응답 JSON 파싱 실패: ' + text.slice(0, 200));
+  return {
+    reply: obj.reply || '', replyKo: obj.replyKo || '',
+    category: obj.category || '기타',
+    confidence: (typeof obj.confidence === 'number' ? obj.confidence : null)
+  };
+}
+function extractJson_(s) {
+  var i = s.indexOf('{'), j = s.lastIndexOf('}');
+  if (i < 0 || j < 0) return null;
+  try { return JSON.parse(s.substring(i, j + 1)); } catch (e) { return null; }
+}
+
+// ---- 매핑: cs/inbox.bookingId(원번호) ↔ pendingBookings.channelBookingId ----
+var _pendingCache = null;
+function loadPending_() {
+  if (_pendingCache !== null) return _pendingCache;
+  for (var i = 0; i < PENDING_PATHS.length; i++) {
+    try { var d = fbGet(PENDING_PATHS[i]); if (d) { _pendingCache = d; return d; } } catch (e) {}
+  }
+  _pendingCache = {}; return _pendingCache;
+}
+function findSirvoy_(bookingId) {
+  if (!bookingId) return null;
+  var p = loadPending_();
+  for (var key in p) {
+    var b = p[key];
+    if (b && String(b.channelBookingId) === String(bookingId))
+      return { sirvoyId: key, room: (b.room || b.roomName || b.unit || b.roomType || null) };
+  }
+  return null; // 매칭 실패 → null 허용 (폴백 미구현, Fable 지시)
+}
+
+// ---- (3) 텔레그램 ----
+function tgNotify_(text) {
+  var props = PropertiesService.getScriptProperties();
+  var tok = props.getProperty('TG_TOKEN'), chat = props.getProperty('TG_CHAT');
+  if (!tok || !chat) { Logger.log('TG 미설정 — 푸시 스킵: ' + text); return; }
+  try {
+    UrlFetchApp.fetch('https://api.telegram.org/bot' + tok + '/sendMessage', {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({ chat_id: chat, text: text }), muteHttpExceptions: true
+    });
+  } catch (e) { Logger.log('TG 실패: ' + e); }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// (1) 코퍼스 구축 — 1회성 함수 (트리거 아님, Clara가 GAS 에디터에서 실행)
+// ══════════════════════════════════════════════════════════════════
+
+// (1a) CS-DB 시트 임포트 → cs/corpus
+function importCorpusFromSheet() {
+  var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
+  var sheet = ss.getSheets()[0];
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 2) { Logger.log('시트 데이터 없음'); return; }
+  var header = values[0].map(function (h) { return String(h).trim(); });
+  var ci = { situ: -1, ans: -1, lang: -1 };
+  for (var i = 0; i < header.length; i++) {
+    var h = header[i];
+    if (ci.situ < 0 && /상황|요약|질문|문의/.test(h)) ci.situ = i;
+    if (ci.ans  < 0 && /답변|응대|회신/.test(h)) ci.ans = i;
+    if (ci.lang < 0 && /언어|lang/i.test(h)) ci.lang = i;
+  }
+  if (ci.situ < 0 || ci.ans < 0) {
+    Logger.log('⚠️ 열 매핑 실패 — 헤더=[' + header.join(' | ') + '] · 상황/답변 열 필요. 열 이름 알려주면 매핑 보강.');
+    return;
+  }
+  var n = 0;
+  for (var r = 1; r < values.length; r++) {
+    var situ = String(values[r][ci.situ] || '').trim();
+    var ans  = String(values[r][ci.ans]  || '').trim();
+    if (!situ && !ans) continue;
+    var lang = ci.lang >= 0 ? String(values[r][ci.lang] || '').trim() : '';
+    if (!lang) lang = guessLang_(ans || situ);
+    var id = 'sheet_' + r;
+    if (fbGet('cs/corpus/' + id)) continue; // 재실행 멱등
+    fbSet('cs/corpus/' + id, { '상황요약': situ, '최종답변': ans, lang: lang, origin: '구축', src: 'sheet' });
+    n++;
+  }
+  Logger.log('시트 임포트 완료: ' + n + '건 (situ=' + header[ci.situ] + ', ans=' + header[ci.ans]
+    + ', lang=' + (ci.lang >= 0 ? header[ci.lang] : '추정') + ')');
+}
+
+// (1b) Gmail 마이닝 → cs/corpus (게스트 메시지 ↔ 클라라 회신 쌍)
+function mineCorpusFromGmail() {
+  var me = Session.getActiveUser().getEmail();
+  var start = 0, batch = 50, maxThreads = 400, made = 0, scanned = 0;
+  while (start < maxThreads) {
+    var threads = GmailApp.search('from:guest.booking.com', start, batch);
+    if (!threads.length) break;
+    for (var t = 0; t < threads.length; t++) {
+      scanned++;
+      var msgs = threads[t].getMessages();
+      var pendingGuest = null;
+      for (var m = 0; m < msgs.length; m++) {
+        var from = msgs[m].getFrom();
+        if (/@guest\.booking\.com/i.test(from)) {
+          var raw = { from: from, subject: msgs[m].getSubject(), body: msgs[m].getPlainBody() };
+          var p = parseBooking_(raw);
+          pendingGuest = { id: msgs[m].getId(), msg: (p.message || raw.body || '').trim(), lang: p.lang };
+        } else if (me && from.indexOf(me) >= 0 && pendingGuest) {
+          var reply = stripQuoted_(msgs[m].getPlainBody());
+          if (reply) {
+            var id = pendingGuest.id;
+            if (!fbGet('cs/corpus/' + id)) {
+              fbSet('cs/corpus/' + id, {
+                '상황요약': pendingGuest.msg, '최종답변': reply,
+                lang: pendingGuest.lang || guessLang_(pendingGuest.msg), origin: '구축', src: 'gmail'
+              });
+              made++;
+            }
+          }
+          pendingGuest = null; // 쌍 소비
+        }
+      }
+    }
+    start += batch;
+  }
+  Logger.log('Gmail 마이닝 완료: 스레드 ' + scanned + ' 스캔, corpus ' + made + '건 적재');
+}
+
+// 회신 본문에서 인용/원문 꼬리 제거 (클라라가 "##-" 마커 위에 입력)
+function stripQuoted_(body) {
+  if (!body) return '';
+  var lines = body.split('\n'), out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    if (/^>/.test(ln)) break;
+    if (/wrote:\s*$/.test(ln)) break;
+    if (ln.indexOf('##-') >= 0) break;
+    if (/^-----/.test(ln)) break;
+    if (/^________/.test(ln)) break;
+    if (/^On .*(202\d|오후|오전).*$/.test(ln)) break;
+    out.push(ln);
+  }
+  return out.join('\n').trim();
 }
