@@ -69,33 +69,82 @@ function fbDelete(path) {
 // 메인 폴링 — 1분 트리거가 호출
 // ══════════════════════════════════════════════════════════════════
 
-function pollCsInbox() {
-  var label = GmailApp.getUserLabelByName(CS_LABEL);
-  if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); return; }
+// ══════════════════════════════════════════════════════════════════
+// Gmail 예산 가드 (HK 쿼터 보호) — CS의 모든 Gmail 호출을 카운팅·차단
+//   일일 사용량: 스크립트 속성 CS_GMAIL_USED_<KST날짜>(예: CS_GMAIL_USED_2026-07-07) 누적
+//   일일 상한:   스크립트 속성 CS_GMAIL_BUDGET (기본 150). 초과 시 해당 run Gmail 작업 즉시 중단(예외 X).
+//   ※ 실제 구글 쿼터 수치는 추측·하드코딩 금지 — 상한은 속성으로만 관리. 다음 날 새 날짜키로 자동 재개.
+//   최상위 원칙: CS는 어떤 경우에도 HK(PWR-HK-Engine)의 Gmail 사용을 침해하지 않는다.
+// ══════════════════════════════════════════════════════════════════
+var _gmailStop = false;      // 이번 run 예산 소진 플래그
+var _budgetLogged = false;   // run당 로그 1회
 
-  var doneLabel = GmailApp.getUserLabelByName(CS_DONE_LABEL) || GmailApp.createLabel(CS_DONE_LABEL);
-
-  // 슬래시 포함 라벨명은 Gmail 검색 문법으로 못 찾음(중첩라벨 기벽) → 라벨 객체로 직접 조회
-  var threads = label.getThreads(0, 20);
-  for (var t = 0; t < threads.length; t++) {
-    // 이미 적재된(=CS_DONE_LABEL 부여) 스레드는 skip (기존 검색의 -label 대체)
-    if (threadHasLabel_(threads[t], CS_DONE_LABEL)) continue;
-    var msgs = threads[t].getMessages();
-    for (var m = 0; m < msgs.length; m++) {
-      try {
-        ingestMessage_(msgs[m]);
-      } catch (e) {
-        Logger.log('적재 실패 msgId=' + safeId_(msgs[m]) + ' : ' + e);
-        // 개별 메시지 실패가 스레드 전체 라벨링을 막지 않도록 계속 진행하되,
-        // 실패 메시지가 하나라도 있으면 아래 doneLabel 부여를 건너뛴다.
-        threads[t]._hadFailure = true;
-      }
+function gmailUsedKey_() {
+  return 'CS_GMAIL_USED_' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+}
+function budgetAllows_(used, budget, n) { return (budget - used) >= (n || 1); } // 순수(테스트용)
+function budgetGate_(op) {
+  if (_gmailStop) return false;
+  var p = PropertiesService.getScriptProperties();
+  var budget = parseInt(p.getProperty('CS_GMAIL_BUDGET') || '150', 10);
+  var key = gmailUsedKey_();
+  var used = parseInt(p.getProperty(key) || '0', 10);
+  if (!budgetAllows_(used, budget, 1)) {
+    _gmailStop = true;
+    if (!_budgetLogged) {
+      Logger.log('⛔ CS Gmail 일일 예산 소진 (used=' + used + '/' + budget + ') — Gmail 작업 중단(op=' + op + '). 다음 날 자동 재개.');
+      _budgetLogged = true;
     }
-    if (!threads[t]._hadFailure) threads[t].addLabel(doneLabel);
+    return false;
+  }
+  p.setProperty(key, String(used + 1)); // 카운트 누적(호출당 1)
+  return true;
+}
+// Gmail 호출 래퍼 — 전부 예산 게이트 경유. 예산 초과 시 안전한 빈값 반환(예외 X).
+function gmGetLabel_(name)           { return budgetGate_('getLabel')    ? GmailApp.getUserLabelByName(name) : null; }
+function gmCreateLabel_(name)        { return budgetGate_('createLabel') ? GmailApp.createLabel(name)        : null; }
+function gmGetThreads_(label, s, n)  { return budgetGate_('getThreads')  ? label.getThreads(s, n)           : []; }
+function gmSearch_(q, s, n)          { return budgetGate_('search')      ? GmailApp.search(q, s, n)          : []; }
+function gmGetMessages_(thread)      { return budgetGate_('getMessages') ? thread.getMessages()             : []; }
+function gmAddLabel_(thread, label)  { if (budgetGate_('addLabel'))      thread.addLabel(label); }
+function gmRemoveLabel_(thread, lbl) { if (budgetGate_('removeLabel'))   thread.removeLabel(lbl); }
+
+// ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
+// 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 5분 주기 1개만 설치.
+function installCsTriggers() {
+  var trg = ScriptApp.getProjectTriggers(); // 이 프로젝트 한정 — HK와 무관
+  var removed = 0;
+  for (var i = 0; i < trg.length; i++) { ScriptApp.deleteTrigger(trg[i]); removed++; }
+  ScriptApp.newTrigger('pollCsInbox').timeBased().everyMinutes(5).create();
+  Logger.log('CS 트리거 재설치: 기존 ' + removed + '개 삭제 → pollCsInbox 5분 주기 1개 설치');
+}
+
+function safeDrafts_() { try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); } }
+
+function pollCsInbox() {
+  var label = gmGetLabel_(CS_LABEL);
+  if (_gmailStop) { safeDrafts_(); return; }
+  if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); safeDrafts_(); return; }
+
+  var doneLabel = gmGetLabel_(CS_DONE_LABEL) || gmCreateLabel_(CS_DONE_LABEL);
+  if (_gmailStop || !doneLabel) { safeDrafts_(); return; }
+
+  // 저연비: 처리 완료 스레드는 CS_LABEL에서 제거(라벨 이동)하므로 매 run 미처리분만 조회됨.
+  // (멱등 이중 안전판: ingestMessage_ 의 fbGet 존재체크가 재적재 방지)
+  var threads = gmGetThreads_(label, 0, 20);
+  for (var t = 0; t < threads.length && !_gmailStop; t++) {
+    var msgs = gmGetMessages_(threads[t]);
+    if (_gmailStop) break;
+    var hadFailure = false;
+    for (var m = 0; m < msgs.length; m++) {
+      try { ingestMessage_(msgs[m]); }
+      catch (e) { Logger.log('적재 실패 msgId=' + safeId_(msgs[m]) + ' : ' + e); hadFailure = true; }
+    }
+    if (!hadFailure) { gmAddLabel_(threads[t], doneLabel); gmRemoveLabel_(threads[t], label); }
   }
 
-  // M2a: 신규 inbox → Claude 초안 생성 (수신과 분리 — API 실패해도 적재는 유지)
-  try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); }
+  // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
+  safeDrafts_();
 }
 
 function ingestMessage_(msg) {
@@ -223,12 +272,7 @@ function guessLang_(text) {
 
 function safeId_(msg) { try { return msg.getId(); } catch (e) { return '?'; } }
 
-// 스레드에 특정 이름의 라벨이 붙어있는지 (getLabels() 이름 비교 — 검색 -label 대체)
-function threadHasLabel_(thread, name) {
-  var ls = thread.getLabels();
-  for (var i = 0; i < ls.length; i++) if (ls[i].getName() === name) return true;
-  return false;
-}
+// (threadHasLabel_ 제거: 저연비 라벨-이동 방식으로 대체되어 미사용. 예산 밖 getLabels 호출 제거.)
 
 // 라벨 줄 값 추출: "라벨: 값"(같은 줄) 또는 라벨 다음 첫 비어있지 않은 줄. 없으면 null.
 function findLineValue_(lines, label) {
@@ -256,11 +300,13 @@ function pad2_(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 // 수동 점검용 (트리거 아님) — GAS 에디터에서 직접 실행해 파싱 결과만 로그로 확인
 // ══════════════════════════════════════════════════════════════════
 function debugPeekLatest() {
-  var label = GmailApp.getUserLabelByName(CS_LABEL);
+  var label = gmGetLabel_(CS_LABEL);
+  if (_gmailStop) return;
   if (!label) { Logger.log('라벨 없음: ' + CS_LABEL); return; }
-  var threads = label.getThreads(0, 1);
-  if (!threads.length) { Logger.log('라벨에 메일 없음'); return; }
-  var msg = threads[0].getMessages()[0];
+  var threads = gmGetThreads_(label, 0, 1);
+  if (_gmailStop || !threads.length) { if (!_gmailStop) Logger.log('라벨에 메일 없음'); return; }
+  var msg = gmGetMessages_(threads[0])[0];
+  if (!msg) return;
   var raw = { from: msg.getFrom(), subject: msg.getSubject(), body: msg.getPlainBody(), receivedAt: msg.getDate().toISOString() };
   Logger.log(JSON.stringify(parseBooking_(raw), null, 2));
 }
@@ -444,6 +490,8 @@ function tgNotify_(text) {
 // ══════════════════════════════════════════════════════════════════
 
 // (1a) CS-DB 시트 임포트 → cs/corpus
+// ※ Gmail 예산 가드 대상(§5): 이 함수는 SpreadsheetApp만 사용하고 GmailApp 호출이 없어
+//   Gmail 쿼터를 소모하지 않음 → 감쌀 Gmail 호출 없음(예산 영향 N/A).
 function importCorpusFromSheet() {
   var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
   var sheet = ss.getSheets()[0];
@@ -478,41 +526,60 @@ function importCorpusFromSheet() {
 }
 
 // (1b) Gmail 마이닝 → cs/corpus (게스트 메시지 ↔ 클라라 회신 쌍)
+// 재개 가능한 배치 마이닝 (Clara 수동 실행, 트리거 없음).
+//   1회 최대 CS_MINE_BATCH(기본 25)스레드. 커서 CS_MINE_CURSOR에 진행 위치 저장 → 재실행 시 이어서.
+//   전량 완료 시 커서 제거 + "MINING COMPLETE" 로그. 예산 소진 시 진행분까지 커서 저장 후 중단.
+//   모든 Gmail 호출은 예산 게이트 경유.
 function mineCorpusFromGmail() {
+  var p = PropertiesService.getScriptProperties();
+  var batch = parseInt(p.getProperty('CS_MINE_BATCH') || '25', 10);
+  var cursor = parseInt(p.getProperty('CS_MINE_CURSOR') || '0', 10);
   var me = Session.getActiveUser().getEmail();
-  var start = 0, batch = 50, maxThreads = 400, made = 0, scanned = 0;
-  while (start < maxThreads) {
-    var threads = GmailApp.search('from:guest.booking.com', start, batch);
-    if (!threads.length) break;
-    for (var t = 0; t < threads.length; t++) {
-      scanned++;
-      var msgs = threads[t].getMessages();
-      var pendingGuest = null;
-      for (var m = 0; m < msgs.length; m++) {
-        var from = msgs[m].getFrom();
-        if (/@guest\.booking\.com/i.test(from)) {
-          var raw = { from: from, subject: msgs[m].getSubject(), body: msgs[m].getPlainBody() };
-          var p = parseBooking_(raw);
-          pendingGuest = { id: msgs[m].getId(), msg: (p.message || raw.body || '').trim(), lang: p.lang };
-        } else if (me && from.indexOf(me) >= 0 && pendingGuest) {
-          var reply = stripQuoted_(msgs[m].getPlainBody());
-          if (reply) {
-            var id = pendingGuest.id;
-            if (!fbGet('cs/corpus/' + id)) {
-              fbSet('cs/corpus/' + id, {
-                '상황요약': pendingGuest.msg, '최종답변': reply,
-                lang: pendingGuest.lang || guessLang_(pendingGuest.msg), origin: '구축', src: 'gmail'
-              });
-              made++;
-            }
-          }
-          pendingGuest = null; // 쌍 소비
+
+  var threads = gmSearch_('from:guest.booking.com', cursor, batch);
+  if (_gmailStop) { Logger.log('⛔ 예산 소진 — 마이닝 미진행. cursor=' + cursor + ' 유지.'); return; }
+  if (!threads.length) { p.deleteProperty('CS_MINE_CURSOR'); Logger.log('MINING COMPLETE — 더 없음(시작 cursor=' + cursor + '). cursor 제거.'); return; }
+
+  var processed = 0, made = 0;
+  for (var t = 0; t < threads.length && !_gmailStop; t++) {
+    var msgs = gmGetMessages_(threads[t]);
+    if (_gmailStop) break;
+    var pendingGuest = null;
+    for (var m = 0; m < msgs.length; m++) {
+      var from = msgs[m].getFrom();
+      if (/@guest\.booking\.com/i.test(from)) {
+        var raw = { from: from, subject: msgs[m].getSubject(), body: msgs[m].getPlainBody() };
+        var pp = parseBooking_(raw);
+        pendingGuest = { id: msgs[m].getId(), msg: (pp.message || raw.body || '').trim(), lang: pp.lang };
+      } else if (me && from.indexOf(me) >= 0 && pendingGuest) {
+        var reply = stripQuoted_(msgs[m].getPlainBody());
+        if (reply && !fbGet('cs/corpus/' + pendingGuest.id)) {
+          fbSet('cs/corpus/' + pendingGuest.id, {
+            '상황요약': pendingGuest.msg, '최종답변': reply,
+            lang: pendingGuest.lang || guessLang_(pendingGuest.msg), origin: '구축', src: 'gmail'
+          });
+          made++;
         }
+        pendingGuest = null; // 쌍 소비
       }
     }
-    start += batch;
+    processed++;
   }
-  Logger.log('Gmail 마이닝 완료: 스레드 ' + scanned + ' 스캔, corpus ' + made + '건 적재');
+
+  var out = miningOutcome_(cursor, processed, threads.length, batch, _gmailStop);
+  if (out.cursor === null) p.deleteProperty('CS_MINE_CURSOR');
+  else p.setProperty('CS_MINE_CURSOR', String(out.cursor));
+  if (out.complete)      Logger.log('MINING COMPLETE — 이번 ' + processed + '건 처리, corpus +' + made + '. 전량 완료(cursor 제거).');
+  else if (out.partial)  Logger.log('⛔ 예산 소진 — 부분 처리 ' + processed + '건, corpus +' + made + ', cursor=' + out.cursor + ' (다음 실행 시 이어서).');
+  else                   Logger.log('마이닝 배치: ' + processed + '건 처리, corpus +' + made + ', cursor=' + out.cursor + ' (재실행으로 계속).');
+}
+
+// 순수(테스트용): 마이닝 커서/완료 판정. 반환 {cursor: 새 커서 or null(완료), complete, partial}
+function miningOutcome_(cursor, processed, threadsLen, batch, stopped) {
+  var next = cursor + processed;
+  if (stopped) return { cursor: next, complete: false, partial: true };
+  if (threadsLen < batch) return { cursor: null, complete: true, partial: false }; // 마지막 배치 처리 완료
+  return { cursor: next, complete: false, partial: false };
 }
 
 // 회신 본문에서 인용/원문 꼬리 제거 (클라라가 "##-" 마커 위에 입력)
