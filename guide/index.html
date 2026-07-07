@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Paradise Walk Residence — Guest Guide</title>
-<meta name="description" content="Your arrival & stay guide for Paradise Walk Residence near Incheon Airport — free shuttle, finding the building, check-in, house rules, and contact.">
+<meta name="description" content="Your arrival & stay guide for Paradise Walk Residence near Incheon Airport — free shuttle, taxi, finding the building, check-in, notice, and contact.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,6 +36,7 @@ body{
 }
 img{display:block;max-width:100%;}
 a{color:var(--night);text-decoration:none;}
+button{font-family:inherit;cursor:pointer;}
 
 /* ---- shell: phone-width, centered on desktop ---- */
 .wrap{max-width:460px;margin:0 auto;background:var(--paper);min-height:100vh;
@@ -50,10 +51,6 @@ a{color:var(--night);text-decoration:none;}
 .hero h1{font-family:var(--mono);font-weight:700;font-size:27px;line-height:1.15;
   letter-spacing:.5px;margin:6px 0 10px;}
 .hero .sub{color:var(--ink2);font-size:14.5px;max-width:34ch;}
-.hours{display:inline-flex;align-items:center;gap:7px;margin-top:16px;
-  background:var(--go-soft);color:var(--go);border-radius:100px;
-  padding:6px 13px;font-size:12.5px;font-weight:600;}
-.hours b{font-family:var(--mono);letter-spacing:.5px;}
 
 /* ---- quick nav ---- */
 nav.jump{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow-x:auto;
@@ -64,6 +61,28 @@ nav.jump a{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
   letter-spacing:.4px;color:var(--ink2);background:var(--card);
   border:1px solid var(--line);border-radius:100px;padding:6px 12px;}
 
+/* ---- support & contact block (top) ---- */
+.support{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;margin:18px 20px 0;}
+.support .sh{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:1.5px;
+  color:var(--amber);text-transform:uppercase;margin-bottom:6px;}
+.support .hrs{font-size:15px;font-weight:600;margin-bottom:13px;}
+.support .hrs b{font-family:var(--mono);font-weight:700;letter-spacing:.5px;}
+.msgs{display:flex;flex-direction:column;gap:8px;}
+.mchip{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;}
+.mchip .badge{flex:0 0 auto;width:32px;height:32px;border-radius:9px;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:8.5px;letter-spacing:.2px;}
+.mchip .badge.line{background:#06C755;}
+.mchip .badge.wechat{background:#07C160;}
+.mchip .txt{flex:1;line-height:1.25;}
+.mchip .txt .k{display:block;font-size:11px;color:var(--muted);}
+.mchip .txt .v{display:block;font-weight:700;font-size:15px;}
+.mchip .act{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;color:var(--night);
+  background:var(--night-soft);border-radius:100px;padding:4px 9px;white-space:nowrap;}
+.support .note{margin:13px 0 0;}
+
 /* ---- sections ---- */
 section{padding:30px 20px 8px;scroll-margin-top:56px;}
 .sec-k{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:2px;
@@ -71,7 +90,7 @@ section{padding:30px 20px 8px;scroll-margin-top:56px;}
 .sec-h{font-size:22px;font-weight:700;line-height:1.2;margin:4px 0 16px;letter-spacing:-.2px;}
 p{margin-bottom:13px;color:var(--ink);}
 p.lead{color:var(--ink2);}
-h3{font-size:15.5px;font-weight:700;margin:20px 0 9px;}
+h3{font-size:15.5px;font-weight:700;margin:22px 0 9px;}
 
 /* ---- cards / images ---- */
 .photo{border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);
@@ -112,26 +131,20 @@ ol.steps li b{color:var(--ink);}
 .note.stop{background:var(--warn-soft);border-color:#EFCFC5;color:#8F3323;}
 .note b{font-weight:700;}
 
-/* ---- link buttons ---- */
-.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);
-  font-size:12.5px;font-weight:500;letter-spacing:.4px;
-  border:1px solid var(--line);background:var(--card);color:var(--ink2);
-  border-radius:100px;padding:9px 15px;margin:5px 6px 5px 0;}
-.btn.solid{background:var(--night);color:#fff;border-color:var(--night);}
-
-/* ---- address box ---- */
+/* ---- address / taxi card ---- */
 .addr{background:var(--ink);color:#fff;border-radius:var(--r);padding:18px 18px 16px;margin:14px 0;}
-.addr .lbl{font-family:var(--mono);font-size:10px;letter-spacing:2px;
+.addr .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;
   color:#B9C0C7;text-transform:uppercase;margin-bottom:10px;}
 .addr .kr{font-size:19px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
-.addr .en{font-size:13.5px;color:#C7CDD3;margin-top:6px;line-height:1.45;}
+.addr .drop{font-size:15.5px;font-weight:600;line-height:1.5;margin-top:9px;color:#F1DDA6;}
+.addr .en{font-size:13px;color:#C7CDD3;margin-top:10px;line-height:1.45;}
 .addr .row{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
 .addr .abtn{flex:1 1 auto;text-align:center;font-family:var(--mono);font-size:12px;
   font-weight:600;letter-spacing:.4px;border-radius:9px;padding:10px;
   background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.22);}
 .addr .abtn.maps{background:#fff;color:var(--ink);border-color:#fff;}
 
-/* ---- fact rows (Your Stay) ---- */
+/* ---- fact rows ---- */
 .facts{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
   background:var(--card);margin:12px 0;}
 .facts .f{display:flex;gap:12px;padding:13px 15px;border-top:1px solid var(--line);}
@@ -160,8 +173,9 @@ ol.steps li b{color:var(--ink);}
 .contact{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   padding:18px;margin:12px 0;}
 .wa-btn{display:flex;align-items:center;justify-content:center;gap:10px;
-  background:var(--wa);color:#fff;border-radius:12px;padding:15px;
+  background:var(--wa);color:#fff;border-radius:12px;padding:14px 15px;
   font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.3px;}
+.wa-btn svg{flex:0 0 auto;}
 .wa-btn .num{font-weight:500;font-size:13px;opacity:.92;}
 .ids{display:flex;gap:9px;margin:14px 0 4px;}
 .ids .id{flex:1;text-align:center;background:var(--paper);border:1px solid var(--line);
@@ -175,11 +189,12 @@ footer{padding:26px 20px 40px;text-align:center;color:var(--muted);
   font-size:11.5px;border-top:1px solid var(--line);margin-top:22px;}
 footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-size:12px;}
 
-/* ---- video slot (hidden until Clara provides URL) ---- */
-.video-slot{margin:12px 0;border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);}
+/* ---- video (vertical Shorts) ---- */
+.video-slot{margin:12px auto;border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);
+  max-width:300px;}
 .video-slot .vlabel{font-family:var(--mono);font-size:11px;letter-spacing:.5px;
   color:var(--ink2);padding:10px 12px;background:var(--card);}
-.video-slot .vframe{position:relative;padding-top:56.25%;background:#000;}
+.video-slot .vframe{position:relative;padding-top:177.78%;background:#000;} /* 9:16 vertical */
 .video-slot .vframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
 </style>
 
@@ -190,7 +205,6 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     <div class="brandmark">Paradise Walk Residence</div>
     <h1>Welcome —<br>your arrival guide</h1>
     <p class="sub">A self check-in residence right by Incheon Airport Terminal 1. Everything you need for a smooth arrival is on this page.</p>
-    <div class="hours">🕘 Support <b>09:00–21:00 KST</b></div>
   </header>
 
   <nav class="jump">
@@ -201,7 +215,28 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     <a href="#contact">💬 Contact</a>
   </nav>
 
-  <div class="note info" style="margin:18px 20px 0;">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
+  <!-- [v1.1 #1] Support hours + messenger contacts + delayed-reply note, together -->
+  <div class="support">
+    <div class="sh">Support &amp; Contact</div>
+    <div class="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
+    <div class="msgs">
+      <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
+        <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
+      </a>
+      <button class="mchip" type="button" data-copy="pwresi">
+        <span class="badge line">LINE</span>
+        <span class="txt"><span class="k">LINE ID</span><span class="v">pwresi</span></span>
+        <span class="act">Tap to copy</span>
+      </button>
+      <button class="mchip" type="button" data-copy="pwresi">
+        <span class="badge wechat">WeChat</span>
+        <span class="txt"><span class="k">WeChat ID</span><span class="v">pwresi</span></span>
+        <span class="act">Tap to copy</span>
+      </button>
+    </div>
+    <div class="note info">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
+  </div>
 
   <!-- ═══════════ 2. GETTING HERE ═══════════ -->
   <section id="shuttle">
@@ -214,13 +249,14 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       <div class="cap">SHUTTLE ROUTE OVERVIEW</div>
     </div>
 
+    <!-- [v1.1 #2] T1 / T2 unified after-alight narrative; only the stop differs -->
     <div class="route">
       <div class="rt"><span class="pill">FROM T1</span> Terminal 1 → Us</div>
       <ol class="steps">
         <li>Go to <b>3F (Departures)</b>, <b>Gate 3 or 12</b>.</li>
         <li>Take circulation <b>Bus No.03</b> (bound for AICC).</li>
         <li>Get off at the <b>1st stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
-        <li>Cross the crosswalk — <b>IBC World Gate</b> is right there.</li>
+        <li>Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
       </ol>
     </div>
     <div class="note warm">🧳 Walking from T1 is possible (~15 min), but not recommended with luggage.</div>
@@ -231,8 +267,23 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
         <li>Go to <b>3F</b>, <b>Gate 7</b>.</li>
         <li>Take the same <b>Bus No.03</b>.</li>
         <li>Get off at the <b>4th stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
-        <li>Walk slightly in the bus's direction, then cross the crosswalk.</li>
+        <li>Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
       </ol>
+    </div>
+
+    <!-- [v1.1 #2] "이 건물이 보이면 도착" recognition photo -->
+    <div class="photo">
+      <img src="../assets/images/Building.jpg" alt="Our building — when you see it, you've arrived" loading="lazy" decoding="async">
+      <div class="cap">WHEN YOU SEE THIS BUILDING, YOU'VE ARRIVED</div>
+    </div>
+
+    <!-- [v1.1 #10] Walking video (YouTube Shorts, vertical) -->
+    <div class="video-slot">
+      <div class="vlabel">🎥 Video: from the shuttle stop to our building</div>
+      <div class="vframe">
+        <iframe src="https://www.youtube.com/embed/R2jEc-ogdWU" title="From the shuttle stop to our building"
+          loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+      </div>
     </div>
 
     <div class="route">
@@ -250,19 +301,27 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       <div class="cap">TO THE AIRPORT-BOUND STOP</div>
     </div>
 
-    <div>
-      <a class="btn" href="https://www.airport.kr/ap_en/1518/subview.do" target="_blank" rel="noopener">🕒 Bus 03 timetable ↗</a>
-      <a class="btn" href="https://www.airport.kr/ap_en/6605/subview.do" target="_blank" rel="noopener">🕒 Bus 04 timetable ↗</a>
+    <!-- [v1.1 #5 + #11] Bus 04 timetable as image (Bus 03 link removed) -->
+    <div class="photo map">
+      <img src="../assets/images/bus04-timetable.jpg" alt="Bus No.04 timetable from the Int'l Business Center stop" loading="lazy" decoding="async">
+      <div class="cap">TIMETABLE — FROM "INT'L BUSINESS CENTER" STOP (THE STOP ON THE RIGHT SIDE OF THE MAP)</div>
     </div>
+  </section>
 
-    <!-- 🎥 VIDEO GUIDE SLOT — YouTube embed goes here once Clara provides the URL.
-         Kept hidden (display:none) for now, per spec (지금은 비노출). To enable:
-           1) remove style="display:none" from the .video-slot below
-           2) uncomment the <iframe> and set its src to the YouTube embed URL. -->
-    <div class="video-slot" style="display:none">
-      <div class="vlabel">🎥 Video guide: from the shuttle stop to our building</div>
-      <div class="vframe">
-        <!-- <iframe src="https://www.youtube.com/embed/VIDEO_ID" title="Shuttle stop to building" allowfullscreen></iframe> -->
+  <!-- ═══════════ [v1.1 #3 + #4] BY TAXI — moved right below the shuttle section ═══════════ -->
+  <section aria-label="By taxi">
+    <div class="sec-k">By Taxi</div>
+    <div class="sec-h">Taking a taxi? 🚕</div>
+    <p class="lead">Show this to your driver:</p>
+
+    <div class="addr">
+      <div class="lbl">기사님께 보여주세요 · Show your driver</div>
+      <div class="kr">인천광역시 중구 공항로424번길 50, IBC월드게이트</div>
+      <div class="drop">— 월드게이트 정문 앞 횡단보도에서 내려주세요, 감사합니다!</div>
+      <div class="en">IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon</div>
+      <div class="row">
+        <button class="abtn" type="button" data-copy="인천광역시 중구 공항로424번길 50, IBC월드게이트 — 월드게이트 정문 앞 횡단보도에서 내려주세요, 감사합니다!">⧉ Copy</button>
+        <a class="abtn maps" href="https://maps.app.goo.gl/3HosXsDa21Eti5Zo6" target="_blank" rel="noopener">Open in Google Maps ↗</a>
       </div>
     </div>
   </section>
@@ -271,17 +330,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
   <section id="building">
     <div class="sec-k">Finding the Building</div>
     <div class="sec-h">You've arrived 📍</div>
-    <p class="lead">Show this address to a taxi driver, or open it in Google Maps.</p>
-
-    <div class="addr">
-      <div class="lbl">Show this to your taxi driver</div>
-      <div class="kr">인천광역시 중구 공항로424번길 50, IBC월드게이트</div>
-      <div class="en">IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon</div>
-      <div class="row">
-        <button class="abtn" id="copyAddr" type="button">⧉ Copy address</button>
-        <a class="abtn maps" href="https://maps.app.goo.gl/3HosXsDa21Eti5Zo6" target="_blank" rel="noopener">Open in Google Maps ↗</a>
-      </div>
-    </div>
+    <p class="lead">Recognize the building from these photos, then head straight up by elevator.</p>
 
     <div class="photo">
       <img src="../assets/images/Building.jpg" alt="Building exterior" loading="lazy" decoding="async">
@@ -302,30 +351,42 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       <div class="cap">ELEVATORS — 1ST FLOOR</div>
     </div>
 
-    <div class="note info">🔑 This is an <b>unmanned residence</b> — there is no front desk. Your <b>room number & door code</b> are sent on your arrival day, so you can go straight up by elevator.</div>
+    <!-- [v1.1 #6] door-code delivery path -->
+    <div class="note info">🔑 This is an <b>unmanned residence</b> — there is no front desk. For your privacy and safety, your <b>room number &amp; door code</b> are sent via your <b>booking platform's message</b> on arrival day, so you can go straight up by elevator.</div>
   </section>
 
   <!-- ═══════════ 4. YOUR STAY ═══════════ -->
   <section id="stay">
     <div class="sec-k">Your Stay</div>
-    <div class="sec-h">Everything in the room 🏠</div>
+    <div class="sec-h">In your room 🏠</div>
 
+    <!-- [v1.1 #7] check-in / check-out on separate rows; ETA line removed -->
     <div class="facts">
       <div class="f"><div class="ic">🕒</div><div class="bd">
-        <div class="t">Check-in &amp; Check-out</div>
-        <div class="d">Check-in from <b>3:00 PM</b> · Check-out by <b>11:00 AM</b>. Need to arrive early? Message us in advance with your ETA — we'll do our best.</div>
+        <div class="t">Check-in</div>
+        <div class="d">From <b>3:00 PM</b>.</div>
       </div></div>
-      <div class="f"><div class="ic">🧳</div><div class="bd">
-        <div class="t">Luggage</div>
-        <div class="d">No luggage storage before check-in or after check-out (there is no on-site office).</div>
+      <div class="f"><div class="ic">🕚</div><div class="bd">
+        <div class="t">Check-out</div>
+        <div class="d">By <b>11:00 AM</b>.</div>
       </div></div>
+      <!-- [v1.1 #8] Wi-Fi sticker location -->
       <div class="f"><div class="ic">📶</div><div class="bd">
         <div class="t">Wi-Fi</div>
-        <div class="d">The network name &amp; password are on the <b>sticker on the router</b>, under the TV.</div>
+        <div class="d">Wi-Fi details are on a sticker at the <b>end of the TV cabinet</b> — the drawer unit the TV sits on.</div>
       </div></div>
       <div class="f"><div class="ic">🌡️</div><div class="bd">
         <div class="t">Heating &amp; Cooling</div>
         <div class="d">Fan-coil system — the control panel is <b>next to the bathroom door</b>.</div>
+      </div></div>
+    </div>
+
+    <!-- [v1.1 #9] Notice — Luggage / Parking / Trash grouped here + house rules -->
+    <h3>Notice</h3>
+    <div class="facts">
+      <div class="f"><div class="ic">🧳</div><div class="bd">
+        <div class="t">Luggage</div>
+        <div class="d">No luggage storage before check-in or after check-out (there is no on-site office).</div>
       </div></div>
       <div class="f"><div class="ic">🅿️</div><div class="bd">
         <div class="t">Parking</div>
@@ -337,7 +398,6 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       </div></div>
     </div>
 
-    <h3>House rules</h3>
     <div class="rules">
       <div class="r"><b>🚭 Strictly non-smoking</b>A special cleaning fee applies if violated.</div>
       <div class="r"><b>👥 Max 2 guests</b>Per room.</div>
@@ -379,6 +439,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
     <div class="contact">
       <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
         <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
       </a>
       <div class="ids">
@@ -398,14 +459,17 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
 <script>
   (function(){
-    var btn = document.getElementById('copyAddr');
-    if(!btn) return;
-    var text = '인천광역시 중구 공항로424번길 50, IBC월드게이트 / IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon';
-    btn.addEventListener('click', function(){
-      var done = function(){ var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function(){ btn.textContent = o; }, 1600); };
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text).then(done).catch(function(){ done(); });
-      } else { done(); }
+    // Tap-to-copy for any [data-copy] element (taxi address, LINE/WeChat IDs)
+    document.querySelectorAll('[data-copy]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var val = el.getAttribute('data-copy');
+        var fb = el.querySelector('.act') || el;
+        var orig = fb.textContent;
+        var show = function(){ fb.textContent = 'Copied ✓'; setTimeout(function(){ fb.textContent = orig; }, 1500); };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(val).then(show).catch(show);
+        } else { show(); }
+      });
     });
   })();
 </script>
