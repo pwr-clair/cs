@@ -1,0 +1,411 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Paradise Walk Residence — Guest Guide</title>
+<meta name="description" content="Your arrival & stay guide for Paradise Walk Residence near Incheon Airport — free shuttle, finding the building, check-in, house rules, and contact.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+
+<style>
+:root{
+  --paper:#F7F5F0;      /* PWR ivory */
+  --paper2:#F0ECE2;     /* warm section tint */
+  --card:#FFFFFF;
+  --ink:#232E38;
+  --ink2:#5D6771;
+  --muted:#93938B;
+  --line:#E5E1D7;
+  --go:#177A54;   --go-soft:#E2F1E9;
+  --night:#33509E;--night-soft:#E7ECF8;
+  --warn:#BC4430; --warn-soft:#F9E9E4;
+  --amber:#96731C;--amber-soft:#F5EEDA;
+  --wa:#25D366;
+  --r:16px; --rs:11px;
+  --mono:'Space Grotesk','Pretendard Variable',sans-serif;
+  --sans:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15.5px;line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+img{display:block;max-width:100%;}
+a{color:var(--night);text-decoration:none;}
+
+/* ---- shell: phone-width, centered on desktop ---- */
+.wrap{max-width:460px;margin:0 auto;background:var(--paper);min-height:100vh;
+  box-shadow:0 0 60px rgba(35,46,56,.06);}
+
+/* ---- hero ---- */
+.hero{position:relative;padding:34px 22px 26px;
+  background:linear-gradient(160deg,#FBF9F4 0%,#F0ECE2 100%);
+  border-bottom:1px solid var(--line);}
+.brandmark{font-family:var(--mono);font-weight:700;letter-spacing:3px;
+  font-size:13px;color:var(--amber);text-transform:uppercase;}
+.hero h1{font-family:var(--mono);font-weight:700;font-size:27px;line-height:1.15;
+  letter-spacing:.5px;margin:6px 0 10px;}
+.hero .sub{color:var(--ink2);font-size:14.5px;max-width:34ch;}
+.hours{display:inline-flex;align-items:center;gap:7px;margin-top:16px;
+  background:var(--go-soft);color:var(--go);border-radius:100px;
+  padding:6px 13px;font-size:12.5px;font-weight:600;}
+.hours b{font-family:var(--mono);letter-spacing:.5px;}
+
+/* ---- quick nav ---- */
+nav.jump{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow-x:auto;
+  padding:11px 16px;background:rgba(247,245,240,.92);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);scrollbar-width:none;}
+nav.jump::-webkit-scrollbar{display:none;}
+nav.jump a{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
+  letter-spacing:.4px;color:var(--ink2);background:var(--card);
+  border:1px solid var(--line);border-radius:100px;padding:6px 12px;}
+
+/* ---- sections ---- */
+section{padding:30px 20px 8px;scroll-margin-top:56px;}
+.sec-k{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:2px;
+  color:var(--amber);text-transform:uppercase;}
+.sec-h{font-size:22px;font-weight:700;line-height:1.2;margin:4px 0 16px;letter-spacing:-.2px;}
+p{margin-bottom:13px;color:var(--ink);}
+p.lead{color:var(--ink2);}
+h3{font-size:15.5px;font-weight:700;margin:20px 0 9px;}
+
+/* ---- cards / images ---- */
+.photo{border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);
+  background:var(--paper2);margin:12px 0;}
+.photo img{width:100%;height:220px;object-fit:cover;}
+.photo.map img{height:auto;object-fit:contain;background:#fff;}
+.cap{font-family:var(--mono);font-size:10px;letter-spacing:.6px;color:var(--muted);
+  padding:8px 12px;border-top:1px solid var(--line);background:var(--card);}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0;}
+.gallery .photo{margin:0;}
+.gallery .photo img{height:135px;}
+
+/* ---- route steps ---- */
+.route{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 16px 6px;margin:12px 0;}
+.route .rt{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.5px;
+  color:var(--night);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.route .rt .pill{background:var(--night-soft);color:var(--night);border-radius:6px;
+  font-size:10px;padding:2px 7px;letter-spacing:1px;}
+ol.steps{list-style:none;counter-reset:s;}
+ol.steps li{counter-increment:s;position:relative;padding:0 0 14px 34px;
+  font-size:14.5px;line-height:1.5;}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:-1px;
+  width:23px;height:23px;border-radius:50%;background:var(--night);color:#fff;
+  font-family:var(--mono);font-size:11.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;}
+ol.steps li:not(:last-child)::after{content:'';position:absolute;left:11px;top:23px;
+  bottom:4px;width:1.5px;background:var(--line);}
+ol.steps li b{color:var(--ink);}
+.stopname{background:var(--amber-soft);color:var(--amber);border-radius:5px;
+  padding:1px 6px;font-weight:600;white-space:nowrap;}
+
+/* ---- inline note callouts ---- */
+.note{border-radius:var(--rs);padding:11px 14px;font-size:13.5px;line-height:1.5;
+  margin:12px 0;border:1px solid var(--line);background:var(--card);}
+.note.warm{background:var(--amber-soft);border-color:#E7D9AE;color:#7A5E14;}
+.note.info{background:var(--night-soft);border-color:#CFDBF3;color:#2C3F7A;}
+.note.stop{background:var(--warn-soft);border-color:#EFCFC5;color:#8F3323;}
+.note b{font-weight:700;}
+
+/* ---- link buttons ---- */
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);
+  font-size:12.5px;font-weight:500;letter-spacing:.4px;
+  border:1px solid var(--line);background:var(--card);color:var(--ink2);
+  border-radius:100px;padding:9px 15px;margin:5px 6px 5px 0;}
+.btn.solid{background:var(--night);color:#fff;border-color:var(--night);}
+
+/* ---- address box ---- */
+.addr{background:var(--ink);color:#fff;border-radius:var(--r);padding:18px 18px 16px;margin:14px 0;}
+.addr .lbl{font-family:var(--mono);font-size:10px;letter-spacing:2px;
+  color:#B9C0C7;text-transform:uppercase;margin-bottom:10px;}
+.addr .kr{font-size:19px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
+.addr .en{font-size:13.5px;color:#C7CDD3;margin-top:6px;line-height:1.45;}
+.addr .row{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
+.addr .abtn{flex:1 1 auto;text-align:center;font-family:var(--mono);font-size:12px;
+  font-weight:600;letter-spacing:.4px;border-radius:9px;padding:10px;
+  background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.22);}
+.addr .abtn.maps{background:#fff;color:var(--ink);border-color:#fff;}
+
+/* ---- fact rows (Your Stay) ---- */
+.facts{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  background:var(--card);margin:12px 0;}
+.facts .f{display:flex;gap:12px;padding:13px 15px;border-top:1px solid var(--line);}
+.facts .f:first-child{border-top:none;}
+.facts .f .ic{flex:0 0 22px;font-size:17px;line-height:1.4;text-align:center;}
+.facts .f .bd{flex:1;}
+.facts .f .t{font-weight:700;font-size:14.5px;margin-bottom:1px;}
+.facts .f .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
+.facts .f .d b{color:var(--ink);}
+
+/* ---- rules grid ---- */
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
+.rules .r{background:var(--warn-soft);border:1px solid #EFCFC5;border-radius:10px;
+  padding:10px 12px;font-size:13px;color:#8F3323;line-height:1.4;}
+.rules .r b{display:block;font-weight:700;margin-bottom:1px;}
+.rules .r.ok{background:var(--go-soft);border-color:#BFE0CF;color:#155E43;}
+
+/* ---- around list ---- */
+.spots .s{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);}
+.spots .s:first-child{border-top:none;}
+.spots .s .ic{flex:0 0 22px;font-size:17px;text-align:center;}
+.spots .s .t{font-weight:700;font-size:14.5px;}
+.spots .s .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
+
+/* ---- contact ---- */
+.contact{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin:12px 0;}
+.wa-btn{display:flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--wa);color:#fff;border-radius:12px;padding:15px;
+  font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.3px;}
+.wa-btn .num{font-weight:500;font-size:13px;opacity:.92;}
+.ids{display:flex;gap:9px;margin:14px 0 4px;}
+.ids .id{flex:1;text-align:center;background:var(--paper);border:1px solid var(--line);
+  border-radius:10px;padding:11px 8px;}
+.ids .id .k{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);}
+.ids .id .v{font-weight:700;font-size:15px;margin-top:2px;}
+.ota{font-size:13.5px;color:var(--ink2);margin-top:8px;line-height:1.5;}
+
+/* ---- footer ---- */
+footer{padding:26px 20px 40px;text-align:center;color:var(--muted);
+  font-size:11.5px;border-top:1px solid var(--line);margin-top:22px;}
+footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-size:12px;}
+
+/* ---- video slot (hidden until Clara provides URL) ---- */
+.video-slot{margin:12px 0;border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);}
+.video-slot .vlabel{font-family:var(--mono);font-size:11px;letter-spacing:.5px;
+  color:var(--ink2);padding:10px 12px;background:var(--card);}
+.video-slot .vframe{position:relative;padding-top:56.25%;background:#000;}
+.video-slot .vframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
+</style>
+
+<div class="wrap">
+
+  <!-- ═══════════ 1. WELCOME ═══════════ -->
+  <header class="hero">
+    <div class="brandmark">Paradise Walk Residence</div>
+    <h1>Welcome —<br>your arrival guide</h1>
+    <p class="sub">A self check-in residence right by Incheon Airport Terminal 1. Everything you need for a smooth arrival is on this page.</p>
+    <div class="hours">🕘 Support <b>09:00–21:00 KST</b></div>
+  </header>
+
+  <nav class="jump">
+    <a href="#shuttle">🚌 Free Shuttle</a>
+    <a href="#building">📍 The Building</a>
+    <a href="#stay">🏠 Your Stay</a>
+    <a href="#around">🗺️ Around</a>
+    <a href="#contact">💬 Contact</a>
+  </nav>
+
+  <div class="note info" style="margin:18px 20px 0;">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
+
+  <!-- ═══════════ 2. GETTING HERE ═══════════ -->
+  <section id="shuttle">
+    <div class="sec-k">Getting Here</div>
+    <div class="sec-h">Free Airport Shuttle 🚌</div>
+    <p class="lead">A free circulation bus connects the airport to our building. Pick your terminal below.</p>
+
+    <div class="photo map">
+      <img src="../assets/images/Map-shuttle-overview.jpeg" alt="Shuttle route overview map" loading="lazy" decoding="async">
+      <div class="cap">SHUTTLE ROUTE OVERVIEW</div>
+    </div>
+
+    <div class="route">
+      <div class="rt"><span class="pill">FROM T1</span> Terminal 1 → Us</div>
+      <ol class="steps">
+        <li>Go to <b>3F (Departures)</b>, <b>Gate 3 or 12</b>.</li>
+        <li>Take circulation <b>Bus No.03</b> (bound for AICC).</li>
+        <li>Get off at the <b>1st stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
+        <li>Cross the crosswalk — <b>IBC World Gate</b> is right there.</li>
+      </ol>
+    </div>
+    <div class="note warm">🧳 Walking from T1 is possible (~15 min), but not recommended with luggage.</div>
+
+    <div class="route">
+      <div class="rt"><span class="pill">FROM T2</span> Terminal 2 → Us</div>
+      <ol class="steps">
+        <li>Go to <b>3F</b>, <b>Gate 7</b>.</li>
+        <li>Take the same <b>Bus No.03</b>.</li>
+        <li>Get off at the <b>4th stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
+        <li>Walk slightly in the bus's direction, then cross the crosswalk.</li>
+      </ol>
+    </div>
+
+    <div class="route">
+      <div class="rt"><span class="pill">TO AIRPORT</span> Us → Terminal</div>
+      <ol class="steps">
+        <li>Exit the main entrance and cross toward the <b>Incheon Airport Corporation</b> building.</li>
+        <li>Walk right to the nearest bus stop.</li>
+        <li>Take <b>Bus No.04</b>.</li>
+        <li><b>T1</b> ~5 min (2 stops) · <b>T2</b> ~25 min (4 stops).</li>
+      </ol>
+    </div>
+
+    <div class="photo map">
+      <img src="../assets/images/map-to-airport.png" alt="Walking map from the building to the airport-bound bus stop" loading="lazy" decoding="async">
+      <div class="cap">TO THE AIRPORT-BOUND STOP</div>
+    </div>
+
+    <div>
+      <a class="btn" href="https://www.airport.kr/ap_en/1518/subview.do" target="_blank" rel="noopener">🕒 Bus 03 timetable ↗</a>
+      <a class="btn" href="https://www.airport.kr/ap_en/6605/subview.do" target="_blank" rel="noopener">🕒 Bus 04 timetable ↗</a>
+    </div>
+
+    <!-- 🎥 VIDEO GUIDE SLOT — YouTube embed goes here once Clara provides the URL.
+         Kept hidden (display:none) for now, per spec (지금은 비노출). To enable:
+           1) remove style="display:none" from the .video-slot below
+           2) uncomment the <iframe> and set its src to the YouTube embed URL. -->
+    <div class="video-slot" style="display:none">
+      <div class="vlabel">🎥 Video guide: from the shuttle stop to our building</div>
+      <div class="vframe">
+        <!-- <iframe src="https://www.youtube.com/embed/VIDEO_ID" title="Shuttle stop to building" allowfullscreen></iframe> -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 3. FINDING THE BUILDING ═══════════ -->
+  <section id="building">
+    <div class="sec-k">Finding the Building</div>
+    <div class="sec-h">You've arrived 📍</div>
+    <p class="lead">Show this address to a taxi driver, or open it in Google Maps.</p>
+
+    <div class="addr">
+      <div class="lbl">Show this to your taxi driver</div>
+      <div class="kr">인천광역시 중구 공항로424번길 50, IBC월드게이트</div>
+      <div class="en">IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon</div>
+      <div class="row">
+        <button class="abtn" id="copyAddr" type="button">⧉ Copy address</button>
+        <a class="abtn maps" href="https://maps.app.goo.gl/3HosXsDa21Eti5Zo6" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+      </div>
+    </div>
+
+    <div class="photo">
+      <img src="../assets/images/Building.jpg" alt="Building exterior" loading="lazy" decoding="async">
+      <div class="cap">THE BUILDING — EXTERIOR</div>
+    </div>
+    <div class="gallery">
+      <div class="photo">
+        <img src="../assets/images/Building-main-entrance.jpeg" alt="Main entrance" loading="lazy" decoding="async">
+        <div class="cap">MAIN ENTRANCE</div>
+      </div>
+      <div class="photo">
+        <img src="../assets/images/building-main-lobby.jpg" alt="Main lobby" loading="lazy" decoding="async">
+        <div class="cap">LOBBY</div>
+      </div>
+    </div>
+    <div class="photo">
+      <img src="../assets/images/Elevator-1st-floor-01.jpeg" alt="Elevators on the 1st floor" loading="lazy" decoding="async">
+      <div class="cap">ELEVATORS — 1ST FLOOR</div>
+    </div>
+
+    <div class="note info">🔑 This is an <b>unmanned residence</b> — there is no front desk. Your <b>room number & door code</b> are sent on your arrival day, so you can go straight up by elevator.</div>
+  </section>
+
+  <!-- ═══════════ 4. YOUR STAY ═══════════ -->
+  <section id="stay">
+    <div class="sec-k">Your Stay</div>
+    <div class="sec-h">Everything in the room 🏠</div>
+
+    <div class="facts">
+      <div class="f"><div class="ic">🕒</div><div class="bd">
+        <div class="t">Check-in &amp; Check-out</div>
+        <div class="d">Check-in from <b>3:00 PM</b> · Check-out by <b>11:00 AM</b>. Need to arrive early? Message us in advance with your ETA — we'll do our best.</div>
+      </div></div>
+      <div class="f"><div class="ic">🧳</div><div class="bd">
+        <div class="t">Luggage</div>
+        <div class="d">No luggage storage before check-in or after check-out (there is no on-site office).</div>
+      </div></div>
+      <div class="f"><div class="ic">📶</div><div class="bd">
+        <div class="t">Wi-Fi</div>
+        <div class="d">The network name &amp; password are on the <b>sticker on the router</b>, under the TV.</div>
+      </div></div>
+      <div class="f"><div class="ic">🌡️</div><div class="bd">
+        <div class="t">Heating &amp; Cooling</div>
+        <div class="d">Fan-coil system — the control panel is <b>next to the bathroom door</b>.</div>
+      </div></div>
+      <div class="f"><div class="ic">🅿️</div><div class="bd">
+        <div class="t">Parking</div>
+        <div class="d">Paid parking <b>inside the building only</b>: first 20 min <b>₩1,000</b>, then <b>₩1,000 per 30 min</b>, daily max <b>₩50,000</b>. We can't offer free parking due to strict airport-area regulations.</div>
+      </div></div>
+      <div class="f"><div class="ic">🗑️</div><div class="bd">
+        <div class="t">Trash <span style="font-weight:500;color:var(--muted);font-size:12px;">(stays of 7+ days)</span></div>
+        <div class="d">Recyclables → box by the door · General waste → bin in the kitchen · Food waste → bin under the sink. Disposal area is <b>outside the building's back door</b>.</div>
+      </div></div>
+    </div>
+
+    <h3>House rules</h3>
+    <div class="rules">
+      <div class="r"><b>🚭 Strictly non-smoking</b>A special cleaning fee applies if violated.</div>
+      <div class="r"><b>👥 Max 2 guests</b>Per room.</div>
+      <div class="r"><b>🐾 No pets</b></div>
+      <div class="r"><b>🔇 No parties / noise</b>Grounds for immediate eviction.</div>
+      <div class="r ok" style="grid-column:1 / -1;"><b>🚪 Don't open the door to unannounced visitors</b>Our team never visits without notice.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 5. AROUND THE BUILDING ═══════════ -->
+  <section id="around">
+    <div class="sec-k">Around the Building</div>
+    <div class="sec-h">The neighborhood 🗺️</div>
+
+    <div class="spots">
+      <div class="s"><div class="ic">💊</div><div class="bd">
+        <div class="t">Pharmacy &amp; clinic</div>
+        <div class="d">On <b>B1 of the LG Eclat building</b> — about a 2-minute walk.</div>
+      </div></div>
+      <div class="s"><div class="ic">🏪</div><div class="bd">
+        <div class="t">Convenience stores</div>
+        <div class="d"><b>Emart24</b> (World Gate, 1F), plus <b>7-Eleven</b> and <b>CU</b> nearby.</div>
+      </div></div>
+      <div class="s"><div class="ic">🛒</div><div class="bd">
+        <div class="t">Groceries delivered</div>
+        <div class="d">Order from <b>Lotte Mart Unseo</b> online for same- or next-day delivery to the address above.</div>
+      </div></div>
+      <div class="s"><div class="ic">🍽️</div><div class="bd">
+        <div class="t">Eat &amp; coffee nearby</div>
+        <div class="d"><b>Mamanim</b> — Korean, in the LG Eclat building · a <b>café on the 1st floor</b> of World Gate · <b>Mega Coffee</b> in the next building.</div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 6. CONTACT ═══════════ -->
+  <section id="contact">
+    <div class="sec-k">Contact</div>
+    <div class="sec-h">We're here to help 💬</div>
+
+    <div class="contact">
+      <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
+        <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
+      </a>
+      <div class="ids">
+        <div class="id"><div class="k">LINE ID</div><div class="v">pwresi</div></div>
+        <div class="id"><div class="k">WeChat ID</div><div class="v">pwresi</div></div>
+      </div>
+      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="fm">PARADISE WALK RESIDENCE</div>
+    <div style="margin-top:6px;">Self check-in residence · Incheon Airport</div>
+  </footer>
+
+</div>
+
+<script>
+  (function(){
+    var btn = document.getElementById('copyAddr');
+    if(!btn) return;
+    var text = '인천광역시 중구 공항로424번길 50, IBC월드게이트 / IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon';
+    btn.addEventListener('click', function(){
+      var done = function(){ var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function(){ btn.textContent = o; }, 1600); };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done).catch(function(){ done(); });
+      } else { done(); }
+    });
+  })();
+</script>
