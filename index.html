@@ -36,18 +36,20 @@ button{font-family:inherit;}
 
 /* ── 상단 헤더 (라이트 카드) ── */
 .board{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px 11px;margin-bottom:12px;position:relative;overflow:hidden;color:var(--ink);box-shadow:0 1px 3px rgba(35,46,56,.05);transition:box-shadow .3s;}
-.b-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;}
-.b-title{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:2.5px;}
+.b-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:9px;}
+.b-title{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:2.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .b-title em{font-style:normal;color:var(--go);}
 .stage-tag{font-family:var(--mono);font-size:8.5px;color:var(--ink2);letter-spacing:1px;margin-left:6px;}
-.auto-flag{display:none;align-items:center;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:1px;color:#fff;background:var(--go);border-radius:100px;padding:2px 8px;margin-left:8px;vertical-align:2px;}
+/* 자동발송 ON 배지 — 상단 행(타이틀·시계·로그아웃)을 밀지 않도록 별도 행(블록)으로 배치. ON일 때만 표시. */
+.auto-flag{display:none;align-items:center;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:1px;color:#fff;background:var(--go);border-radius:100px;padding:2px 9px;margin:0 0 9px;}
 .auto-on .auto-flag{display:inline-flex;animation:pulse 1.6s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+/* 녹색 링은 box-shadow(레이아웃 불변) — 폭에 영향 없음 */
 .auto-on .board{box-shadow:0 0 0 2px #34B27E,0 0 18px rgba(52,178,126,.30);}
-.b-right{display:flex;align-items:center;gap:8px;}
-.b-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:1px;}
+.b-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.b-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:1px;white-space:nowrap;}
 .b-clock b{color:var(--ink);font-weight:500;}
-.logout{font-size:10px;color:var(--muted);border:1px solid var(--line);background:var(--paper);border-radius:100px;padding:2px 9px;cursor:pointer;}
+.logout{font-size:10px;color:var(--muted);border:1px solid var(--line);background:var(--paper);border-radius:100px;padding:2px 9px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .b-row{display:flex;gap:6px;}
 .tile{flex:1;background:var(--paper);border:1px solid var(--line);border-radius:var(--rs);padding:7px 4px 6px;text-align:center;}
 .tile .n{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1.1;}
@@ -163,9 +165,10 @@ button{font-family:inherit;}
 
   <div class="board">
     <div class="b-top">
-      <div class="b-title">PWR <em>CS</em> DESK <span class="stage-tag">M2b·1</span><span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span></div>
+      <div class="b-title">PWR <em>CS</em> DESK <span class="stage-tag">M2b·1</span></div>
       <div class="b-right"><span class="b-clock"><b id="clk">--:--</b> KST</span><button class="logout" onclick="logout()">로그아웃</button></div>
     </div>
+    <span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span>
     <div class="b-row">
       <div class="tile t-wait"><div class="n" id="nWait">0</div><div class="l">대기</div></div>
       <div class="tile t-task"><div class="n">—</div><div class="l">업무</div></div>
