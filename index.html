@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PWR CS DESK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root{
+  --paper:#F7F5F0; --card:#FFFFFF; --ink:#232E38; --ink2:#5D6771; --muted:#93938B; --line:#E5E1D7;
+  --go:#177A54; --go-soft:#E2F1E9; --night:#33509E; --night-soft:#E7ECF8;
+  --warn:#BC4430; --warn-soft:#F9E9E4; --amber:#96731C; --amber-soft:#F5EEDA;
+  --wait-red:#B5342A;
+  --r:14px; --rs:9px; --mono:'Space Grotesk','Pretendard Variable',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--paper);color:var(--ink);font-family:'Pretendard Variable',Pretendard,sans-serif;font-size:14px;line-height:1.55;}
+button{font-family:inherit;}
+.wrap{max-width:430px;margin:0 auto;padding:14px 12px 44px;}
+
+/* ── 로그인 ── */
+#login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px;z-index:100;}
+.login-card{width:100%;max-width:320px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 2px 10px rgba(35,46,56,.06);padding:26px 22px;text-align:center;}
+.login-logo{font-family:var(--mono);font-weight:700;font-size:20px;letter-spacing:2.5px;}
+.login-logo em{font-style:normal;color:var(--go);}
+.login-sub{font-size:11px;color:var(--muted);margin:6px 0 20px;letter-spacing:.5px;}
+.login-text-input{width:100%;border:1px solid var(--line);border-radius:var(--rs);padding:11px 12px;font-family:inherit;font-size:14px;color:var(--ink);background:var(--paper);margin-bottom:9px;}
+.login-text-input:focus{outline:2px solid var(--go);outline-offset:1px;}
+.login-btn{width:100%;padding:11px;border-radius:var(--rs);border:1px solid var(--go);background:var(--go);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:4px;}
+.login-btn:active{transform:scale(.99);}
+#login-err{font-size:11px;color:var(--warn);min-height:16px;margin-top:9px;}
+
+#app-screen{display:none;}
+
+/* ── 상단 헤더 (라이트 카드) ── */
+.board{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px 11px;margin-bottom:12px;position:relative;overflow:hidden;color:var(--ink);box-shadow:0 1px 3px rgba(35,46,56,.05);transition:box-shadow .3s;}
+.b-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;}
+.b-title{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:2.5px;}
+.b-title em{font-style:normal;color:var(--go);}
+.stage-tag{font-family:var(--mono);font-size:8.5px;color:var(--ink2);letter-spacing:1px;margin-left:6px;}
+.auto-flag{display:none;align-items:center;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:1px;color:#fff;background:var(--go);border-radius:100px;padding:2px 8px;margin-left:8px;vertical-align:2px;}
+.auto-on .auto-flag{display:inline-flex;animation:pulse 1.6s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+.auto-on .board{box-shadow:0 0 0 2px #34B27E,0 0 18px rgba(52,178,126,.30);}
+.b-right{display:flex;align-items:center;gap:8px;}
+.b-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:1px;}
+.b-clock b{color:var(--ink);font-weight:500;}
+.logout{font-size:10px;color:var(--muted);border:1px solid var(--line);background:var(--paper);border-radius:100px;padding:2px 9px;cursor:pointer;}
+.b-row{display:flex;gap:6px;}
+.tile{flex:1;background:var(--paper);border:1px solid var(--line);border-radius:var(--rs);padding:7px 4px 6px;text-align:center;}
+.tile .n{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1.1;}
+.tile .l{font-size:9px;color:var(--muted);letter-spacing:1.5px;margin-top:2px;}
+.tile.t-wait{border-color:rgba(181,52,42,.35);background:#FBF1EF;}
+.tile.t-wait .n{color:var(--wait-red);}
+.tile.t-wait .l{color:#A85A4F;}
+.tile.t-task .n{color:#C8552F;}
+.tile.t-sugg .n{color:var(--night);}
+.tile.t-rate .n{color:var(--go);}
+
+.budget{display:flex;align-items:center;gap:8px;margin-top:9px;}
+.budget .bl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--muted);min-width:34px;}
+.budget .bar{flex:1;height:6px;border-radius:100px;background:var(--paper);border:1px solid var(--line);overflow:hidden;}
+.budget .bar i{display:block;height:100%;width:0;border-radius:100px;background:var(--go);transition:width .4s;}
+.budget .bv{font-family:var(--mono);font-size:10px;color:var(--ink2);min-width:52px;text-align:right;}
+.budget.warn .bar i{background:var(--wait-red);}
+.budget.warn .bv{color:var(--wait-red);}
+
+.autobar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:9px 13px;margin-bottom:6px;transition:background .25s,border-color .25s;}
+.autobar .txt{font-size:11.5px;color:var(--ink2);}
+.autobar .txt b{color:var(--ink);font-weight:600;}
+.auto-on .autobar{background:var(--go-soft);border-color:var(--go);}
+.auto-on .autobar .txt b{color:var(--go);}
+.sw{position:relative;flex-shrink:0;width:72px;height:30px;border-radius:100px;border:1px solid var(--line);background:var(--paper);cursor:pointer;transition:.25s;}
+.sw .knob{position:absolute;left:3px;top:2.5px;width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;transition:.25s;color:var(--ink2);}
+.sw .lab{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:8.5px;letter-spacing:1px;color:var(--muted);}
+.sw.on{background:var(--go);border-color:var(--go);}
+.sw.on .knob{left:44px;background:#F4E9C8;color:#3A3320;border-color:transparent;}
+.sw.on .lab{left:9px;right:auto;color:#D6F0E2;}
+.sw:focus-visible{outline:2px solid var(--night);outline-offset:2px;}
+.auto-hint{font-size:9.5px;color:var(--muted);margin:0 2px 14px;}
+
+.tabs{display:flex;gap:4px;margin-bottom:12px;}
+.tab{flex:1;text-align:center;padding:8px 0;border-radius:var(--rs);border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
+.tab .n{font-family:var(--mono);font-size:10px;margin-left:2px;color:var(--muted);}
+.tab.active{background:var(--ink);border-color:var(--ink);color:#fff;}
+.tab.active .n{color:#B8C0C7;}
+.tab:focus-visible{outline:2px solid var(--go);outline-offset:1px;}
+.tab.wait-hot{border-color:#D98A80;color:var(--wait-red);}
+.tab.wait-hot .n{color:#fff;background:var(--wait-red);border-radius:100px;padding:0 6px;font-weight:700;margin-left:3px;}
+.tab.wait-hot.active{background:var(--wait-red);border-color:var(--wait-red);color:#fff;}
+.tab.wait-hot.active .n{background:rgba(255,255,255,.26);}
+.pane{display:none;}
+.pane.show{display:block;animation:up .22s;}
+@keyframes up{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px;margin-bottom:12px;}
+.meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;}
+.chan{font-size:9px;font-weight:700;border-radius:100px;padding:1.5px 8px;color:#fff;background:var(--ink2);}
+.guest{font-weight:700;font-size:14.5px;}
+.lang{font-family:var(--mono);font-size:9px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink2);}
+.cat{font-size:9px;font-weight:700;border-radius:100px;padding:1.5px 8px;background:var(--night-soft);color:var(--night);}
+.time{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-left:auto;}
+.stayline{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink2);margin-bottom:10px;}
+.stayline .rm{color:var(--ink);font-weight:500;}
+.msg{border-left:3px solid var(--line);padding:2px 0 2px 10px;margin-bottom:11px;}
+.msg .who{font-size:9px;color:var(--muted);letter-spacing:.5px;margin-bottom:2px;}
+.msg .body{font-size:13px;white-space:pre-line;}
+.draft{background:var(--paper);border-radius:var(--rs);padding:10px 12px;margin-bottom:9px;}
+.draft .who{font-size:9.5px;color:var(--ink2);margin-bottom:5px;}
+.draft .who b{color:var(--go);}
+.reply{font-size:13px;white-space:pre-line;}
+.gloss{font-size:11px;color:var(--muted);white-space:pre-line;margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
+.gloss::before{content:'KO 대역';display:block;font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:3px;}
+.thumbwrap{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);}
+.thumblab{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:5px;}
+.thumbs{display:flex;gap:7px;flex-wrap:wrap;}
+.thumb{position:relative;width:96px;height:66px;border-radius:8px;overflow:hidden;border:1px solid var(--line);flex-shrink:0;display:block;background:var(--paper);}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.thumb span{position:absolute;left:0;right:0;bottom:0;font-size:8px;color:#fff;background:rgba(20,26,33,.66);padding:2px 4px;text-align:center;}
+.conf{display:flex;align-items:center;gap:7px;margin-bottom:11px;flex-wrap:wrap;}
+.conf .lbl{font-size:9.5px;color:var(--ink2);}
+.conf .dots{display:flex;gap:3px;}
+.conf .d{width:15px;height:4px;border-radius:100px;background:var(--line);}
+.conf .d.f{background:var(--go);}
+.conf.low .d.f{background:var(--amber);}
+.conf .note{font-size:9px;color:var(--muted);}
+.btns{display:flex;gap:7px;}
+.b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
+.b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
+.b.skip{color:var(--muted);}
+.b:disabled{opacity:.45;cursor:not-allowed;}
+.b.go:disabled{background:var(--go);}
+.readonly-note{font-size:9px;color:var(--muted);text-align:center;margin-top:8px;}
+
+.empty{text-align:center;color:var(--muted);font-size:12px;padding:42px 0 30px;}
+.empty .big{font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--ink2);margin-bottom:5px;}
+
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font-size:12px;font-weight:600;padding:9px 16px;border-radius:100px;opacity:0;pointer-events:none;transition:.3s;white-space:nowrap;z-index:120;}
+#toast.show{opacity:1;transform:translateX(-50%);}
+.footnote{font-size:9.5px;color:var(--muted);text-align:center;margin-top:22px;line-height:1.8;}
+.footnote code{font-family:var(--mono);font-size:9px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+</head>
+<body>
+
+<!-- ══ 로그인 화면 (로그인 전 유일 표시) ══ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">PWR <em>CS</em> DESK</div>
+    <div class="login-sub">승인 데스크 · 로그인</div>
+    <input class="login-text-input" id="id-inp" type="text" maxlength="24" placeholder="이름" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    <input class="login-text-input" id="pw-inp" type="password" maxlength="32" placeholder="비밀번호" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="login-btn" onclick="doLogin()">입장</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- ══ 앱 화면 (로그인 후) ══ -->
+<div id="app-screen"><div class="wrap">
+
+  <div class="board">
+    <div class="b-top">
+      <div class="b-title">PWR <em>CS</em> DESK <span class="stage-tag">M2b·1</span><span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span></div>
+      <div class="b-right"><span class="b-clock"><b id="clk">--:--</b> KST</span><button class="logout" onclick="logout()">로그아웃</button></div>
+    </div>
+    <div class="b-row">
+      <div class="tile t-wait"><div class="n" id="nWait">0</div><div class="l">대기</div></div>
+      <div class="tile t-task"><div class="n">—</div><div class="l">업무</div></div>
+      <div class="tile t-sugg"><div class="n">—</div><div class="l">제안</div></div>
+      <div class="tile t-rate"><div class="n">—</div><div class="l">무수정 승인</div></div>
+    </div>
+    <div class="budget" id="gmailGauge">
+      <span class="bl">GMAIL</span>
+      <div class="bar"><i id="gmailFill"></i></div>
+      <span class="bv" id="gmailVal">— /150</span>
+    </div>
+  </div>
+
+  <div class="autobar">
+    <div class="txt" id="autoTxt">자동응대 <b>수동 승인 모드</b> — 전건 승인</div>
+    <div class="sw" id="autoSw" role="switch" aria-checked="false" tabindex="0" onclick="toggleAuto()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAuto();}">
+      <span class="knob" id="swKnob">☀</span><span class="lab" id="swLab">수동</span>
+    </div>
+  </div>
+  <div class="auto-hint">이 토글은 <code style="font-family:var(--mono)">cs/config/autoSend</code>에 저장됩니다 · <b>발송 연동은 M2b-2</b> (지금은 값만 기록, 동작 영향 없음)</div>
+
+  <div class="tabs">
+    <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
+    <button class="tab" onclick="showTab(1,this)">업무<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(2,this)">제안<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(4,this)">보냄<span class="n">—</span></button>
+  </div>
+
+  <!-- 대기 (실데이터 cs/drafts pending) -->
+  <div class="pane show" id="p0">
+    <div id="waitList"></div>
+    <div class="empty" id="emptyWait" style="display:none;"><div class="big">대기 중인 초안 없음</div>새 초안이 생성되면 여기에 표시되고 텔레그램으로 알립니다.</div>
+  </div>
+
+  <!-- 나머지 탭: 이번 단계(M2b-1) 범위 밖 — 다음 단계 연동 -->
+  <div class="pane" id="p1"><div class="empty"><div class="big">M2b-2 / M3</div>업무 탭은 이후 단계에서 연동됩니다.</div></div>
+  <div class="pane" id="p2"><div class="empty"><div class="big">M2b-2 / M3</div>제안 탭은 이후 단계에서 연동됩니다.</div></div>
+  <div class="pane" id="p3"><div class="empty"><div class="big">M2b-2 / M3</div>후기 탭은 이후 단계에서 연동됩니다.</div></div>
+  <div class="pane" id="p4"><div class="empty"><div class="big">M2b-2</div>보냄(발송 기록)은 발송 기능과 함께 연동됩니다.</div></div>
+
+  <div class="footnote">
+    M2b-1 · 읽기 전용 — 승인/수정/발송은 <b>M2b-2</b>에서 활성화<br>
+    Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱 · 쓰기 허용은 자동발송 토글 하나뿐
+  </div>
+
+</div></div>
+
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+// HK와 동일 프로젝트의 공개 web config (비밀 아님). cs/* 만 사용.
+const firebaseConfig = {
+  apiKey: "AIzaSyCHGeD4GBYeatmrsNFaMLJ7rradXnzbSE8",
+  authDomain: "paradise-walk-residence.firebaseapp.com",
+  projectId: "paradise-walk-residence",
+  storageBucket: "paradise-walk-residence.firebasestorage.app",
+  messagingSenderId: "539327839432",
+  appId: "1:539327839432:web:40a824be8e420c9fa8b9fd",
+  databaseURL: "https://paradise-walk-residence-default-rtdb.asia-southeast1.firebasedatabase.app"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(()=>{});
+
+// 이름 → 가짜 이메일 (HK와 동일 방식, 대소문자 무관)
+const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local';
+
+let isLoggedIn=false, currentUser=null, listenersStarted=false;
+let drafts={}, auto=false, budgetData=null;
+
+// ── 로그인 ──
+async function doLogin(){
+  const name=(document.getElementById('id-inp')||{}).value||'';
+  const pw=(document.getElementById('pw-inp')||{}).value||'';
+  const err=document.getElementById('login-err');
+  if(!name.trim()){err.textContent='이름을 입력하세요';return;}
+  if(!pw){err.textContent='비밀번호를 입력하세요';return;}
+  err.textContent='확인 중...';
+  try{
+    await signInWithEmailAndPassword(auth, nameToEmail(name), pw);
+    // 성공 시 onAuthStateChanged가 화면 전환 + 구독 시작
+  }catch(e){
+    err.textContent='이름 또는 비밀번호가 올바르지 않습니다';
+    const p=document.getElementById('pw-inp'); if(p)p.value='';
+  }
+}
+function logout(){ signOut(auth); }
+
+// ── 로그인 완료 후에만 RTDB 구독 시작 (순서 위반 금지) ──
+onAuthStateChanged(auth, (user)=>{
+  if(user){
+    currentUser = String(user.email||'').split('@')[0];
+    if(!listenersStarted){ listenersStarted=true; startListeners(); }
+    isLoggedIn=true;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app-screen').style.display='block';
+    renderAll();
+  }else{
+    isLoggedIn=false; currentUser=null;
+    document.getElementById('app-screen').style.display='none';
+    document.getElementById('login-screen').style.display='flex';
+  }
+});
+
+function startListeners(){
+  const permErr = (path)=> (e)=>{ toast('읽기 권한 오류: '+path+' — Firebase 규칙 확인'); };
+  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderWait(); }, permErr('cs/drafts'));
+  onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
+  onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
+}
+
+// ── 렌더 ──
+function renderAll(){ renderWait(); renderAuto(); renderBudget(); }
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const IMG_RE = /https:\/\/pwr-clair\.github\.io\/cs\/assets\/images\/\S+/g;
+function extractImgs(text){ return (String(text||'').match(IMG_RE)||[]); }
+function stripImgs(text){ return String(text||'').replace(IMG_RE,'').replace(/\n{3,}/g,'\n\n').trim(); }
+function imgLabel(url){ try{ return decodeURIComponent(url.split('/').pop().replace(/\.[a-z]+$/i,'')); }catch(e){ return '이미지'; } }
+function thumbsHtml(urls){
+  return '<div class="thumbwrap"><div class="thumblab">첨부 이미지 — 답장엔 링크로 안내</div><div class="thumbs">'+
+    urls.map(u=>'<a class="thumb" href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" alt="" loading="lazy"><span>'+esc(imgLabel(u))+'</span></a>').join('')+
+    '</div></div>';
+}
+function confDots(c){
+  const has = typeof c==='number' && isFinite(c);
+  const n = has ? Math.max(0,Math.min(5,Math.round(c*5))) : 0;
+  let dots=''; for(let i=0;i<5;i++) dots+='<span class="d'+(i<n?' f':'')+'"></span>';
+  const cls = has && c<0.5 ? ' low' : '';
+  const note = has ? '' : '<span class="note">confidence —</span>';
+  return '<div class="conf'+cls+'"><span class="lbl">말투 일치</span><div class="dots">'+dots+'</div>'+note+'</div>';
+}
+
+function draftCard(id,d){
+  const imgs = extractImgs(d.reply);
+  const replyShown = imgs.length ? stripImgs(d.reply) : String(d.reply||'');
+  const cat = d.category ? '<span class="cat">'+esc(d.category)+'</span>' : '';
+  return '<div class="card">'+
+    '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
+      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+
+      '<span class="time">'+esc(fmtTime(d.createdAt))+'</span></div>'+
+    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · 예약 '+esc(d.bookingId||'—')+'</div>'+
+    '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
+    '<div class="draft"><div class="who">초안 · <b>클라라 말투</b></div>'+
+      '<div class="reply">'+esc(replyShown||'—')+'</div>'+
+      (d.replyKo ? '<div class="gloss">'+esc(d.replyKo)+'</div>' : '')+
+      (imgs.length ? thumbsHtml(imgs) : '')+
+    '</div>'+
+    confDots(d.confidence)+
+    '<div class="btns">'+
+      '<button class="b" disabled title="M2b-2에서 활성화">수정</button>'+
+      '<button class="b skip" disabled title="M2b-2에서 활성화">이미 처리</button>'+
+      '<button class="b go" disabled title="M2b-2에서 활성화">승인 · 발송</button>'+
+    '</div>'+
+    '<div class="readonly-note">읽기 전용 (M2b-1) — 발송/승인/수정은 M2b-2</div>'+
+  '</div>';
+}
+
+function fmtTime(iso){
+  if(!iso) return '—';
+  try{ const d=new Date(iso); if(isNaN(d)) return '—';
+    return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+  catch(e){ return '—'; }
+}
+
+function renderWait(){
+  const list=document.getElementById('waitList');
+  const empty=document.getElementById('emptyWait');
+  const entries=Object.keys(drafts||{})
+    .map(k=>[k,drafts[k]])
+    .filter(([k,d])=> d && d.status==='pending');
+  const cnt=entries.length;
+  document.getElementById('nWait').textContent=cnt;
+  document.getElementById('tWait').textContent=cnt;
+  if(!cnt){ list.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  // createdAt 오름차순(오래된 것 먼저)
+  entries.sort((a,b)=> String(a[1].createdAt||'').localeCompare(String(b[1].createdAt||'')));
+  list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
+}
+
+function renderAuto(){
+  document.body.classList.toggle('auto-on',auto);
+  const sw=document.getElementById('autoSw');
+  sw.classList.toggle('on',auto);
+  sw.setAttribute('aria-checked',auto?'true':'false');
+  document.getElementById('swKnob').textContent=auto?'⚡':'☀';
+  document.getElementById('swLab').textContent=auto?'자동':'수동';
+  document.getElementById('autoTxt').innerHTML=auto
+    ? '자동응대 <b>자동발송 ON</b> — 새 초안 전건 즉시 발송(M2b-2 연동)'
+    : '자동응대 <b>수동 승인 모드</b> — 전건 승인';
+}
+// 유일한 쓰기: cs/config/autoSend
+function toggleAuto(){
+  const next=!auto;
+  set(ref(db,'cs/config/autoSend'), next)
+    .then(()=> toast(next?'자동발송 ON 저장됨 (발송 연동은 M2b-2)':'수동 승인 모드 저장됨'))
+    .catch(e=> toast('설정 저장 실패: 쓰기 권한 확인'));
+}
+
+function renderBudget(){
+  const g=document.getElementById('gmailGauge');
+  const fill=document.getElementById('gmailFill');
+  const val=document.getElementById('gmailVal');
+  const budget = (budgetData && budgetData.budget!=null) ? Number(budgetData.budget) : 150;
+  if(!budgetData || budgetData.used==null){
+    fill.style.width='0%'; val.textContent='— /'+budget; g.classList.remove('warn'); return;
+  }
+  const used=Number(budgetData.used);
+  const pct = budget>0 ? Math.min(100,Math.round(used/budget*100)) : 0;
+  fill.style.width=pct+'%';
+  val.textContent=used+'/'+budget;
+  g.classList.toggle('warn', pct>=80);
+}
+
+// ── 시계 · 토스트 · 탭 ──
+function tick(){ const d=new Date(); const el=document.getElementById('clk'); if(el) el.textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+tick(); setInterval(tick,15000);
+function showTab(i,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.pane').forEach((p,j)=>p.classList.toggle('show',i===j));
+}
+let toastTimer;
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); }
+
+// onclick 핸들러 노출 (module 스코프)
+window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
+</script>
+</body>
+</html>

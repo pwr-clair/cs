@@ -109,6 +109,18 @@ function gmGetMessages_(thread)      { return budgetGate_('getMessages') ? threa
 function gmAddLabel_(thread, label)  { if (budgetGate_('addLabel'))      thread.addLabel(label); }
 function gmRemoveLabel_(thread, lbl) { if (budgetGate_('removeLabel'))   thread.removeLabel(lbl); }
 
+// ---- 예산 미러링 (M2b-1): run 종료 시 현재 사용량을 cs/meta/gmailBudget 에 기록 ----
+// fbSet(Firebase)이므로 Gmail 호출 아님 → 예산 미차감. run당 1회.
+function budgetSnapshot_(usedStr, budgetStr, date) { // 순수(테스트용)
+  return { used: parseInt(usedStr || '0', 10), budget: parseInt(budgetStr || '150', 10), date: date };
+}
+function mirrorBudget_() {
+  var p = PropertiesService.getScriptProperties();
+  var date = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  var snap = budgetSnapshot_(p.getProperty('CS_GMAIL_USED_' + date), p.getProperty('CS_GMAIL_BUDGET'), date);
+  try { fbSet('cs/meta/gmailBudget', snap); } catch (e) { Logger.log('budget mirror 실패: ' + e); }
+}
+
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
 // 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 5분 주기 1개만 설치.
 function installCsTriggers() {
@@ -145,6 +157,7 @@ function pollCsInbox() {
 
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   safeDrafts_();
+  mirrorBudget_(); // run 종료 시 예산 사용량 미러링
 }
 
 function ingestMessage_(msg) {
@@ -512,8 +525,8 @@ function mineCorpusFromGmail() {
   var me = Session.getActiveUser().getEmail();
 
   var threads = gmSearch_('from:guest.booking.com', cursor, batch);
-  if (_gmailStop) { Logger.log('⛔ 예산 소진 — 마이닝 미진행. cursor=' + cursor + ' 유지.'); return; }
-  if (!threads.length) { p.deleteProperty('CS_MINE_CURSOR'); Logger.log('MINING COMPLETE — 더 없음(시작 cursor=' + cursor + '). cursor 제거.'); return; }
+  if (_gmailStop) { Logger.log('⛔ 예산 소진 — 마이닝 미진행. cursor=' + cursor + ' 유지.'); mirrorBudget_(); return; }
+  if (!threads.length) { p.deleteProperty('CS_MINE_CURSOR'); Logger.log('MINING COMPLETE — 더 없음(시작 cursor=' + cursor + '). cursor 제거.'); mirrorBudget_(); return; }
 
   var processed = 0, made = 0;
   for (var t = 0; t < threads.length && !_gmailStop; t++) {
@@ -547,6 +560,7 @@ function mineCorpusFromGmail() {
   if (out.complete)      Logger.log('MINING COMPLETE — 이번 ' + processed + '건 처리, corpus +' + made + '. 전량 완료(cursor 제거).');
   else if (out.partial)  Logger.log('⛔ 예산 소진 — 부분 처리 ' + processed + '건, corpus +' + made + ', cursor=' + out.cursor + ' (다음 실행 시 이어서).');
   else                   Logger.log('마이닝 배치: ' + processed + '건 처리, corpus +' + made + ', cursor=' + out.cursor + ' (재실행으로 계속).');
+  mirrorBudget_(); // run 종료 시 예산 사용량 미러링
 }
 
 // 순수(테스트용): 마이닝 커서/완료 판정. 반환 {cursor: 새 커서 or null(완료), complete, partial}
