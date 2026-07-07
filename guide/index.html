@@ -149,7 +149,7 @@ ol.steps li b{color:var(--ink);}
 .addr{background:var(--ink);color:#fff;border-radius:var(--r);padding:18px 18px 16px;margin:14px 0;}
 .addr .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;
   color:#B9C0C7;text-transform:uppercase;margin-bottom:10px;}
-.addr .kr{font-size:15px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
+.addr .kr{font-size:17px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
 .addr .drop{font-size:15.5px;font-weight:600;line-height:1.5;margin-top:9px;color:#F1DDA6;}
 .addr .en{font-size:13px;color:#C7CDD3;margin-top:10px;line-height:1.45;}
 .addr .row{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
@@ -267,14 +267,8 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       <div class="cap">WHEN YOU SEE THIS BUILDING, YOU'VE ARRIVED</div>
     </div>
 
-    <!-- [v1.1 #10] Walking video (YouTube Shorts, vertical) -->
-    <div class="video-slot">
-      <div class="vlabel">🎥 Video: from the shuttle stop to our building</div>
-      <div class="vframe">
-        <iframe src="https://www.youtube.com/embed/R2jEc-ogdWU" title="From the shuttle stop to our building"
-          loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-      </div>
-    </div>
+    <!-- [v1.3] Walking video removed for now (Shorts R2jEc-ogdWU). To restore: re-add a
+         <div class="video-slot"> with the YouTube embed here. CSS for .video-slot is kept. -->
 
     <div class="route">
       <div class="rt depart"><span class="pill">TO AIRPORT</span> PWR → Terminal (T1/T2)</div>
@@ -362,11 +356,11 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
     <!-- [v1.1 #7] check-in / check-out on separate rows; ETA line removed -->
     <div class="facts">
-      <div class="f"><div class="ic">🕒</div><div class="bd">
+      <div class="f ok"><div class="ic">🕒</div><div class="bd">
         <div class="t">Check-in</div>
         <div class="d">From <b>3:00 PM</b>.</div>
       </div></div>
-      <div class="f"><div class="ic">🕚</div><div class="bd">
+      <div class="f warn"><div class="ic">🕚</div><div class="bd">
         <div class="t">Check-out</div>
         <div class="d">By <b>11:00 AM</b>.</div>
       </div></div>
@@ -444,17 +438,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     </div>
   </section>
 
-  <!-- ═══════════ 6. CONTACT ═══════════ -->
-  <section id="contact">
-    <div class="sec-k">Contact</div>
-    <div class="sec-h">We're here to help 💬</div>
-
-    <div class="contact">
-      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
-    </div>
-  </section>
-
-  <!-- [v1.2 #2] Support hours + messenger contacts — moved to the bottom -->
+  <!-- [v1.3 #4] Support hours + messenger contacts first, booking-platform fallback below -->
   <div class="support">
     <div class="sh">Support &amp; Contact</div>
     <div class="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
@@ -476,6 +460,16 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     </div>
     <div class="note info">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
   </div>
+
+  <!-- ═══════════ 6. CONTACT — booking-platform fallback (moved below Support) ═══════════ -->
+  <section id="contact">
+    <div class="sec-k">Contact</div>
+    <div class="sec-h">We're here to help 💬</div>
+
+    <div class="contact">
+      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
+    </div>
+  </section>
 
   <footer>
     <div class="fm">PARADISE WALK RESIDENCE</div>
