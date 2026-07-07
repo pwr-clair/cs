@@ -43,7 +43,7 @@ button{font-family:inherit;cursor:pointer;}
   box-shadow:0 0 60px rgba(35,46,56,.06);}
 
 /* ---- hero ---- */
-.hero{position:relative;padding:34px 22px 26px;
+.hero{position:relative;padding:48px 22px 26px;
   background:linear-gradient(160deg,#FBF9F4 0%,#F0ECE2 100%);
   border-bottom:1px solid var(--line);}
 .brandmark{font-family:var(--mono);font-weight:700;letter-spacing:3px;
@@ -52,13 +52,17 @@ button{font-family:inherit;cursor:pointer;}
   letter-spacing:.5px;margin:6px 0 10px;}
 .hero .sub{color:var(--ink2);font-size:14.5px;text-align:left;}
 
-/* ---- sticky top bar: language switch + section nav ---- */
+/* ---- language switch: flag circles, hero top-right ---- */
+.langs{position:absolute;top:13px;right:16px;display:flex;gap:6px;z-index:3;}
+.lg{width:30px;height:30px;padding:0;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;line-height:1;background:var(--card);
+  border:1px solid var(--line);box-shadow:0 1px 3px rgba(35,46,56,.10);opacity:.6;}
+.lg.active{opacity:1;border:2px solid var(--ink);box-shadow:0 2px 7px rgba(35,46,56,.22);}
+
+/* ---- sticky section nav ---- */
 .topbar{position:sticky;top:0;z-index:6;background:rgba(247,245,240,.95);
   backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
-.langs{display:flex;gap:6px;padding:9px 16px 2px;justify-content:flex-end;flex-wrap:wrap;}
-.lg{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.3px;
-  color:var(--ink2);background:var(--card);border:1px solid var(--line);border-radius:100px;padding:5px 11px;}
-.lg.active{background:var(--ink);color:#fff;border-color:var(--ink);}
 nav.jump{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 11px;scrollbar-width:none;}
 nav.jump::-webkit-scrollbar{display:none;}
 nav.jump a{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
@@ -212,18 +216,18 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
   <!-- ═══════════ 1. WELCOME ═══════════ -->
   <header class="hero">
+    <div class="langs">
+      <button type="button" class="lg" data-lang="en" title="English" aria-label="English">🇬🇧</button>
+      <button type="button" class="lg" data-lang="ko" title="한국어" aria-label="한국어">🇰🇷</button>
+      <button type="button" class="lg" data-lang="ja" title="日本語" aria-label="日本語">🇯🇵</button>
+      <button type="button" class="lg" data-lang="zh" title="中文" aria-label="中文">🇨🇳</button>
+    </div>
     <div class="brandmark">Paradise Walk Residence</div>
     <h1 data-i18n="hero.h1">Welcome —<br>your arrival guide</h1>
     <p class="sub" data-i18n="hero.sub">A self check-in residence right by Incheon Airport Terminal 1. Everything you need for a smooth arrival is on this page.</p>
   </header>
 
   <div class="topbar">
-    <div class="langs">
-      <button type="button" class="lg" data-lang="en">EN</button>
-      <button type="button" class="lg" data-lang="ko">한국어</button>
-      <button type="button" class="lg" data-lang="ja">日本語</button>
-      <button type="button" class="lg" data-lang="zh">中文</button>
-    </div>
     <nav class="jump">
       <a href="#shuttle" data-i18n="nav.shuttle">🚌 Free Shuttle</a>
       <a href="#building" data-i18n="nav.building">📍 The Building</a>
