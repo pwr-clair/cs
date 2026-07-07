@@ -345,7 +345,7 @@ function debugPeekPending() {
 var CLAUDE_MODEL   = 'claude-haiku-4-5-20251001'; // 저비용 라인 (haiku급)
 var CLAUDE_MAXTOK  = 1024;                         // 보수적
 var CS_DB_SHEET_ID = '1JHbIEJ9XX1Pxp0JPPgQmJ-1xWI7e5fKtrws4x-iCcJg'; // CLAUDE.md §7
-var PENDING_PATHS  = ['pendingBookings', 'app/pendingBookings'];      // 실경로 미확정 → 후보
+var PENDING_PATH   = 'app/pendingBookings';                          // Firebase 실측 확정 경로 (Fable)
 var DRAFT_BATCH    = 5;  // 폴링 1회당 최대 초안 생성 수 (실행시간·비용 캡)
 
 // ---- 클라라 페르소나 (시스템 프롬프트) ----
@@ -456,9 +456,7 @@ function extractJson_(s) {
 var _pendingCache = null;
 function loadPending_() {
   if (_pendingCache !== null) return _pendingCache;
-  for (var i = 0; i < PENDING_PATHS.length; i++) {
-    try { var d = fbGet(PENDING_PATHS[i]); if (d) { _pendingCache = d; return d; } } catch (e) {}
-  }
+  try { var d = fbGet(PENDING_PATH); if (d) { _pendingCache = d; return d; } } catch (e) {}
   _pendingCache = {}; return _pendingCache;
 }
 function findSirvoy_(bookingId) {
@@ -467,7 +465,7 @@ function findSirvoy_(bookingId) {
   for (var key in p) {
     var b = p[key];
     if (b && String(b.channelBookingId) === String(bookingId))
-      return { sirvoyId: key, room: (b.room || b.roomName || b.unit || b.roomType || null) };
+      return { sirvoyId: key, room: (b.assignedRoom || null) }; // 문자열 방번호(예 "620"). 미배정 시 필드 없음 → null → 푸시 "미상"
   }
   return null; // 매칭 실패 → null 허용 (폴백 미구현, Fable 지시)
 }
