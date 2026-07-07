@@ -157,12 +157,17 @@ ol.steps li b{color:var(--ink);}
 .facts .f.ok .t,.facts .f.ok .d{color:#155E43;}
 .facts .f.ok .d b{color:#0F4A34;}
 
-/* ---- around list ---- */
-.spots .s{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);}
-.spots .s:first-child{border-top:none;}
-.spots .s .ic{flex:0 0 22px;font-size:17px;text-align:center;}
-.spots .s .t{font-weight:700;font-size:14.5px;}
-.spots .s .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
+/* ---- around: clickable place list ---- */
+.places{display:flex;flex-direction:column;gap:8px;margin:10px 0 6px;}
+.place{display:flex;align-items:center;gap:11px;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:12px 13px;color:var(--ink);
+  -webkit-tap-highlight-color:transparent;}
+.place:active{background:var(--paper2);}
+.place .pbd{flex:1;min-width:0;}
+.place .pn{font-weight:700;font-size:14.5px;line-height:1.3;}
+.place .pd{font-size:12.5px;color:var(--ink2);line-height:1.45;margin-top:2px;}
+.place .pgo{flex:0 0 auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.5px;
+  color:var(--night);background:var(--night-soft);border-radius:100px;padding:5px 10px;white-space:nowrap;}
 
 /* ---- support & contact ---- */
 .support{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
@@ -410,24 +415,51 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
   <section id="around">
     <div class="sec-k" data-i18n="around.k">Around the Building</div>
     <div class="sec-h" data-i18n="around.h">The neighborhood 🗺️</div>
+    <p class="lead" data-i18n="around.tap">Tap any place to open it in Google Maps.</p>
 
-    <div class="spots">
-      <div class="s"><div class="ic">💊</div><div class="bd">
-        <div class="t" data-i18n="pharm.t">Pharmacy &amp; clinic</div>
-        <div class="d" data-i18n="pharm.d">On <b>B1 of the LG Eclat building</b> — about a 2-minute walk.</div>
-      </div></div>
-      <div class="s"><div class="ic">🏪</div><div class="bd">
-        <div class="t" data-i18n="conv.t">Convenience stores</div>
-        <div class="d" data-i18n="conv.d"><b>Emart24</b> (World Gate, 1F), plus <b>7-Eleven</b> and <b>CU</b> nearby.</div>
-      </div></div>
-      <div class="s"><div class="ic">🛒</div><div class="bd">
-        <div class="t" data-i18n="groc.t">Groceries delivered</div>
-        <div class="d" data-i18n="groc.d">Order from <b>Lotte Mart Unseo</b> online for same- or next-day delivery to the address above.</div>
-      </div></div>
-      <div class="s"><div class="ic">🍽️</div><div class="bd">
-        <div class="t" data-i18n="eat.t">Eat &amp; coffee nearby</div>
-        <div class="d" data-i18n="eat.d"><b>Mamanim</b> — Korean, in the LG Eclat building · a <b>café on the 1st floor</b> of World Gate · <b>Mega Coffee</b> in the next building.</div>
-      </div></div>
+    <h3 data-i18n="around.cat.food">🍽️ Restaurants &amp; Bars</h3>
+    <div class="places">
+      <a class="place" href="https://www.google.com/maps/place/%EA%B3%B5%ED%95%AD%EB%B0%A5%EC%A7%91/data=!4m6!3m5!1s0x357b9b5a5bfa7a09:0x5584002024d412e0!8m2!3d37.4392449!4d126.460172" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">공항밥집</div><div class="pd" data-i18n="p.food1">Korean buffet · opens early, from 6:30 AM</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/%EC%8B%A0%EC%84%A4%EC%A7%81%ED%99%94%ED%99%94%EB%A1%9C%EA%B5%AC%EC%9D%B4/data=!4m6!3m5!1s0x357b9a5c9b1dfa25:0x72b9122318f91892!8m2!3d37.4388946!4d126.4598612" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">신설직화화로구이</div><div class="pd" data-i18n="p.food2">Korean BBQ · a popular grill house</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/%EC%A0%84%EC%A3%BC+%ED%98%84%EB%8C%80%EC%98%A5/data=!4m6!3m5!1s0x357b9b000063c4b1:0x6fc48c30e4f91e5c!8m2!3d37.4390746!4d126.4612952" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">전주현대옥</div><div class="pd" data-i18n="p.food3">Korean (bean-sprout soup rice &amp; more)</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/%EA%B3%A0%ED%96%A5%EC%A7%91/data=!4m6!3m5!1s0x357b9a5cc1e82523:0xbfa9849d7fc1a70b!8m2!3d37.4391694!4d126.4615741" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">고향집</div><div class="pd" data-i18n="p.food4">Korean</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/BHC%EC%B9%98%ED%82%A8+%EC%9D%B8%EC%B2%9C%EA%B3%B5%ED%95%AD%EC%A0%90/data=!4m6!3m5!1s0x357b9b8e1f298eb9:0x3084fa645a57aa47!8m2!3d37.4390646!4d126.4604993" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">BHC치킨 인천공항점</div><div class="pd" data-i18n="p.food5">Fried-chicken franchise</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/The+Cinder+Bar+(Incheon+Airport)/data=!4m6!3m5!1s0x357b9bce0a6b7013:0xbed8405b39816d74!8m2!3d37.4392883!4d126.4602785" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">The Cinder Bar (Incheon Airport)</div><div class="pd" data-i18n="p.food6">Bar</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/The+Jet+Lagged+Lizard/data=!4m6!3m5!1s0x357b9a5cd8abaa2f:0xa6d2af8e42d9da8b!8m2!3d37.4388684!4d126.4607894" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">The Jet Lagged Lizard</div><div class="pd" data-i18n="p.food7">Western-style pub/bar · open until 2:00 AM</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+    </div>
+
+    <h3 data-i18n="around.cat.cafe">☕ Cafés</h3>
+    <p class="lead" data-i18n="around.cafe.intro">Arrived before check-in (3:00 PM)? You're welcome to relax and wait at one of these cafés.</p>
+    <div class="places">
+      <a class="place" href="https://www.google.com/maps/place/Han+Coffee+Shop/data=!4m6!3m5!1s0x357b9b11b57aeb77:0x91987bad30c3a049!8m2!3d37.4391126!4d126.4606511" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">Han Coffee Shop</div><div class="pd" data-i18n="p.cafe1">1F of our building · opens 6:30 AM</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/%EB%A9%94%EA%B0%80%EC%BB%A4%ED%94%BC+%EC%98%81%EC%A2%85%ED%95%A9%EB%8F%99%EC%B2%AD%EC%82%AC%EC%A0%90/data=!4m6!3m5!1s0x357b9b96d8949f39:0xb8ff15233c49f623!8m2!3d37.4391067!4d126.4608154" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">메가커피 영종합동청사점</div><div class="pd" data-i18n="p.cafe2">1F of the building right next door</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+    </div>
+
+    <h3 data-i18n="around.cat.pharm">💊 Pharmacy &amp; Clinic</h3>
+    <div class="places">
+      <a class="place" href="https://www.google.com/maps/place/Yonsei+Pharmacy/data=!4m6!3m5!1s0x357b9b7469298051:0xb81310f835baf614!8m2!3d37.4384955!4d126.4621167" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">연세약국 (Yonsei Pharmacy)</div><div class="pd" data-i18n="p.pharm1">B1 of the LG Eclat building</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/%EC%97%B0%EC%84%B8%EA%B3%B5%ED%95%AD%EC%9D%98%EC%9B%90/data=!4m6!3m5!1s0x357b9a5a7330667b:0xb0a795904fa221ac!8m2!3d37.4387644!4d126.461993" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">연세공항의원</div><div class="pd" data-i18n="p.pharm2">General practitioner (family medicine)</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+    </div>
+
+    <h3 data-i18n="around.cat.conv">🏪 Convenience Stores</h3>
+    <div class="places">
+      <a class="place" href="https://www.google.com/maps/place/emart24/data=!4m6!3m5!1s0x357b9b007c24109d:0x4e93306c6608111c!8m2!3d37.439024!4d126.4597057" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">emart24</div><div class="pd" data-i18n="p.conv1">1F of our building</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/CU+market/data=!4m6!3m5!1s0x357b9bd3d39e26e9:0x54b9872c7bff4f59!8m2!3d37.4392082!4d126.461139" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">CU</div><div class="pd" data-i18n="p.conv2">1F of the building next door (listed as "CU market" on Google Maps)</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
+      <a class="place" href="https://www.google.com/maps/place/7-Eleven/data=!4m6!3m5!1s0x357b9b3ca23781bd:0xe0cdf7c4237883e9!8m2!3d37.4390727!4d126.4620265" target="_blank" rel="noopener">
+        <div class="pbd"><div class="pn">7-Eleven</div><div class="pd" data-i18n="p.conv3">1F of our building</div></div><span class="pgo" data-i18n="map">Map ↗</span></a>
     </div>
   </section>
 
@@ -441,7 +473,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       <div class="msgs">
         <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
-          <span data-i18n="wa">WhatsApp us</span><span class="num">+82 10-8227-2845</span>
+          <span data-i18n="wa">Open WhatsApp</span><span class="num">+82 10-8227-2845</span>
         </a>
         <button class="mchip" type="button" data-copy="pwresi">
           <span class="badge line">LINE</span>
@@ -517,11 +549,18 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       "trash.t": `쓰레기 <span class="subn">(7일 이상 숙박 시)</span>`,
       "trash.d": `재활용 → 문 옆 상자 · 일반 쓰레기 → 주방 쓰레기통 · 음식물 → 싱크대 아래 통. 배출 장소는 <b>건물 뒷문 밖</b>입니다.`,
       "door.t": `예고 없는 방문자에게 문을 열지 마세요`, "door.d": `저희 팀은 사전 안내 없이 방문하지 않습니다.`,
-      "around.k": `건물 주변`, "around.h": `주변 안내 🗺️`,
-      "pharm.t": `약국·병원`, "pharm.d": `<b>LG Eclat 건물 지하 1층</b>에 있습니다 — 도보 약 2분.`,
-      "conv.t": `편의점`, "conv.d": `<b>Emart24</b>(World Gate 1층), 그리고 인근에 <b>7-Eleven</b>·<b>CU</b>가 있습니다.`,
-      "groc.t": `장보기 배달`, "groc.d": `<b>롯데마트 운서점</b> 온라인으로 주문하면 위 주소로 당일·익일 배송됩니다.`,
-      "eat.t": `주변 식당·카페`, "eat.d": `<b>마마님</b> — 한식, LG Eclat 건물 · World Gate <b>1층 카페</b> · 옆 건물 <b>메가커피</b>.`,
+      "around.k": `건물 주변`, "around.h": `주변 안내 🗺️`, "around.tap": `누르면 구글맵으로 열립니다.`, "map": `지도 ↗`,
+      "around.cat.food": `🍽️ 근처 식당 및 바`,
+      "p.food1": `한식 뷔페 · 이른 아침 6:30부터 영업`, "p.food2": `한식 BBQ · 인기 있는 고기집`,
+      "p.food3": `한식 (콩나물국밥 등)`, "p.food4": `한식`, "p.food5": `치킨 프랜차이즈`, "p.food6": `바`,
+      "p.food7": `서양식 펍/바 · 새벽 2시까지 영업`,
+      "around.cat.cafe": `☕ 카페`,
+      "around.cafe.intro": `체크인(오후 3시) 이전에 도착하셨다면, 아래의 카페에서 잠시 쉬며 기다리실 수 있어요.`,
+      "p.cafe1": `숙소 건물 1층 · 새벽 6:30 오픈`, "p.cafe2": `숙소 바로 옆 건물 1층`,
+      "around.cat.pharm": `💊 약국 & 의원`,
+      "p.pharm1": `LG인천공항에클라트(Eclat) 건물 B1`, "p.pharm2": `일반의 (가정의학과 성격)`,
+      "around.cat.conv": `🏪 편의점`,
+      "p.conv1": `숙소 건물 1층`, "p.conv2": `숙소 옆 건물 1층 (구글맵 등록명: CU market)`, "p.conv3": `숙소 건물 1층`,
       "contact.k": `지원·연락처`, "contact.h": `무엇이든 도와드릴게요 💬`,
       "hrs": `🕘 운영 시간 <b>09:00–21:00 (KST)</b>`, "wa": `WhatsApp 바로가기`, "copy.tap": `탭하여 복사`,
       "note.delay": `<b>09:00–21:00 (KST)</b> 외 시간에 보내신 메시지는 답장이 다소 늦을 수 있습니다 — 양해 부탁드립니다.`,
@@ -575,13 +614,20 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       "trash.t": `ゴミ <span class="subn">（7泊以上のご滞在の場合）</span>`,
       "trash.d": `リサイクル → ドア横の箱 · 一般ごみ → キッチンのゴミ箱 · 生ごみ → シンク下の容器。排出場所は<b>建物裏口の外</b>です。`,
       "door.t": `予告のない訪問者にはドアを開けないでください`, "door.d": `当施設のスタッフが予告なく訪問することはありません。`,
-      "around.k": `周辺のご案内`, "around.h": `近隣スポット 🗺️`,
-      "pharm.t": `薬局・クリニック`, "pharm.d": `<b>LG Eclatビルの地下1階</b>にあります — 徒歩約2分。`,
-      "conv.t": `コンビニ`, "conv.d": `<b>Emart24</b>（World Gate 1階）、近くに<b>7-Eleven</b>・<b>CU</b>もあります。`,
-      "groc.t": `食料品のデリバリー`, "groc.d": `<b>ロッテマート雲西店</b>のオンラインで注文すると、上記住所へ当日・翌日配送されます。`,
-      "eat.t": `近くの飲食・カフェ`, "eat.d": `<b>Mamanim</b> — 韓国料理、LG Eclatビル内 · World Gate<b>1階のカフェ</b> · 隣のビルの<b>Mega Coffee</b>。`,
+      "around.k": `周辺のご案内`, "around.h": `近隣スポット 🗺️`, "around.tap": `タップするとGoogleマップで開きます。`, "map": `地図 ↗`,
+      "around.cat.food": `🍽️ 近くの飲食店・バー`,
+      "p.food1": `韓国式ビュッフェ · 朝6:30から営業`, "p.food2": `韓国式BBQ · 人気の焼肉店`,
+      "p.food3": `韓国料理（豆もやしクッパなど）`, "p.food4": `韓国料理`, "p.food5": `チキンのフランチャイズ`, "p.food6": `バー`,
+      "p.food7": `洋風パブ・バー · 深夜2時まで営業`,
+      "around.cat.cafe": `☕ カフェ`,
+      "around.cafe.intro": `チェックイン（15:00）前にご到着の場合は、下のカフェでゆっくりお待ちいただけます。`,
+      "p.cafe1": `当施設の建物1階 · 6:30オープン`, "p.cafe2": `すぐ隣の建物1階`,
+      "around.cat.pharm": `💊 薬局・クリニック`,
+      "p.pharm1": `LG Eclatビルの地下1階`, "p.pharm2": `一般内科（家庭医学）`,
+      "around.cat.conv": `🏪 コンビニ`,
+      "p.conv1": `当施設の建物1階`, "p.conv2": `隣の建物1階（Googleマップ表記は「CU market」）`, "p.conv3": `当施設の建物1階`,
       "contact.k": `サポート・連絡先`, "contact.h": `お気軽にご連絡ください 💬`,
-      "hrs": `🕘 対応時間 <b>09:00–21:00（KST）</b>`, "wa": `WhatsAppで連絡`, "copy.tap": `タップでコピー`,
+      "hrs": `🕘 対応時間 <b>09:00–21:00（KST）</b>`, "wa": `WhatsAppを開く`, "copy.tap": `タップでコピー`,
       "note.delay": `<b>09:00–21:00（KST）</b>以外にいただいたメッセージは、返信が遅れる場合があります — ご了承ください。`,
       "ota": `または<b>ご予約プラットフォーム</b>のメッセージからご返信いただいても構いません — Booking.com、Agoda、Expedia。`,
       "foot.tag": `セルフチェックイン・レジデンス · 仁川空港`
@@ -633,13 +679,20 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       "trash.t": `垃圾 <span class="subn">(入住7天及以上)</span>`,
       "trash.d": `可回收 → 门旁箱子 · 一般垃圾 → 厨房垃圾桶 · 厨余 → 水槽下方桶。投放处在<b>楼后门外</b>。`,
       "door.t": `请勿为未经预约的访客开门`, "door.d": `我们的团队绝不会无预约上门。`,
-      "around.k": `建筑周边`, "around.h": `周边一带 🗺️`,
-      "pharm.t": `药店与诊所`, "pharm.d": `位于<b>LG Eclat大楼地下1层</b> — 步行约2分钟。`,
-      "conv.t": `便利店`, "conv.d": `<b>Emart24</b>（World Gate 1层），附近还有<b>7-Eleven</b>和<b>CU</b>。`,
-      "groc.t": `生鲜配送`, "groc.d": `在<b>乐天玛特云西店</b>网上下单，可当日或次日送至上述地址。`,
-      "eat.t": `周边餐饮与咖啡`, "eat.d": `<b>Mamanim</b> — 韩餐，位于LG Eclat大楼 · World Gate<b>1层咖啡厅</b> · 隔壁楼的<b>Mega Coffee</b>。`,
+      "around.k": `建筑周边`, "around.h": `周边一带 🗺️`, "around.tap": `点按任意地点即可在Google地图中打开。`, "map": `地图 ↗`,
+      "around.cat.food": `🍽️ 附近餐厅与酒吧`,
+      "p.food1": `韩式自助 · 清晨6:30起营业`, "p.food2": `韩式烤肉 · 人气烤肉店`,
+      "p.food3": `韩餐（豆芽汤饭等）`, "p.food4": `韩餐`, "p.food5": `炸鸡连锁店`, "p.food6": `酒吧`,
+      "p.food7": `西式酒吧 · 营业至凌晨2点`,
+      "around.cat.cafe": `☕ 咖啡`,
+      "around.cafe.intro": `若在入住（下午3点）前抵达，可在下方咖啡馆稍作休息等候。`,
+      "p.cafe1": `住宿楼1层 · 6:30开门`, "p.cafe2": `住宿隔壁楼1层`,
+      "around.cat.pharm": `💊 药店与诊所`,
+      "p.pharm1": `LG Eclat大楼地下1层`, "p.pharm2": `全科诊所（家庭医学）`,
+      "around.cat.conv": `🏪 便利店`,
+      "p.conv1": `住宿楼1层`, "p.conv2": `隔壁楼1层（Google地图名为“CU market”）`, "p.conv3": `住宿楼1层`,
       "contact.k": `支持与联系`, "contact.h": `我们随时为您服务 💬`,
-      "hrs": `🕘 服务时间 <b>09:00–21:00（KST）</b>`, "wa": `通过WhatsApp联系`, "copy.tap": `点按复制`,
+      "hrs": `🕘 服务时间 <b>09:00–21:00（KST）</b>`, "wa": `打开WhatsApp`, "copy.tap": `点按复制`,
       "note.delay": `在<b>09:00–21:00（KST）</b>之外发送的消息回复可能稍有延迟 — 敬请谅解。`,
       "ota": `或直接在<b>您的预订平台</b>消息中回复 — Booking.com、Agoda 或 Expedia。`,
       "foot.tag": `自助入住公寓 · 仁川机场`
