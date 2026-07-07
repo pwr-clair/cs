@@ -312,33 +312,6 @@ function debugPeekLatest() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// M2 선행 확인용 (트리거 아님) — pendingBookings 에 "부킹 원번호(10자리)" 필드 존재 여부 점검.
-//   Clara가 GAS 에디터에서 1회 실행 → 실행 로그를 Fable/클코에 전달.
-//   (클코 샌드박스는 FB_AUTH 없어 Firebase 직접 읽기 불가 → GAS에서 확인 필요)
-// ══════════════════════════════════════════════════════════════════
-function debugPeekPending() {
-  var candidates = ['pendingBookings', 'app/pendingBookings', 'app/pending'];
-  var data = null, usedPath = null;
-  for (var c = 0; c < candidates.length; c++) {
-    try { var d = fbGet(candidates[c]); if (d) { data = d; usedPath = candidates[c]; break; } }
-    catch (e) { Logger.log('read fail ' + candidates[c] + ': ' + e); }
-  }
-  if (!data) { Logger.log('pendingBookings 데이터를 못 찾음 — 실제 경로를 알려주세요 (시도: ' + candidates.join(', ') + ')'); return; }
-
-  var keys = Object.keys(data).slice(0, 5);
-  Logger.log('경로=' + usedPath + ' / 총 ' + Object.keys(data).length + '건 중 샘플 ' + keys.length + '건');
-  for (var i = 0; i < keys.length; i++) {
-    var rec = data[keys[i]];
-    // 값이 10자리 숫자인 필드 = 부킹 원번호 후보
-    var tenDigitFields = [];
-    for (var f in rec) { if (/^\d{10}$/.test(String(rec[f]))) tenDigitFields.push(f + '=' + rec[f]); }
-    Logger.log('── [' + keys[i] + '] 필드=' + Object.keys(rec).join(',')
-      + ' | 10자리필드=' + (tenDigitFields.join(', ') || '(없음)'));
-    Logger.log(JSON.stringify(rec));
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
 // M2a — 코퍼스 + 초안 생성 + 텔레그램 푸시
 // ══════════════════════════════════════════════════════════════════
 
@@ -495,32 +468,33 @@ function importCorpusFromSheet() {
   var sheet = ss.getSheets()[0];
   var values = sheet.getDataRange().getValues();
   if (values.length < 2) { Logger.log('시트 데이터 없음'); return; }
+
+  // 확정 헤더(Fable): A=lang, B=guest_message, C=clara_reply, D=category. 정확 일치 요구, 불일치 시 중단(추측 금지).
+  var EXPECT = ['lang', 'guest_message', 'clara_reply', 'category'];
   var header = values[0].map(function (h) { return String(h).trim(); });
-  var ci = { situ: -1, ans: -1, lang: -1 };
-  for (var i = 0; i < header.length; i++) {
-    var h = header[i];
-    if (ci.situ < 0 && /상황|요약|질문|문의/.test(h)) ci.situ = i;
-    if (ci.ans  < 0 && /답변|응대|회신/.test(h)) ci.ans = i;
-    if (ci.lang < 0 && /언어|lang/i.test(h)) ci.lang = i;
+  for (var c = 0; c < EXPECT.length; c++) {
+    if (header[c] !== EXPECT[c]) {
+      Logger.log('헤더 불일치: [' + header.join(' | ') + '] — 기대 [' + EXPECT.join(' | ') + ']. 중단.');
+      return;
+    }
   }
-  if (ci.situ < 0 || ci.ans < 0) {
-    Logger.log('⚠️ 열 매핑 실패 — 헤더=[' + header.join(' | ') + '] · 상황/답변 열 필요. 열 이름 알려주면 매핑 보강.');
-    return;
-  }
+
   var n = 0;
   for (var r = 1; r < values.length; r++) {
-    var situ = String(values[r][ci.situ] || '').trim();
-    var ans  = String(values[r][ci.ans]  || '').trim();
+    var lang = String(values[r][0] || '').trim();   // A lang
+    var situ = String(values[r][1] || '').trim();   // B guest_message → 상황요약
+    var ans  = String(values[r][2] || '').trim();   // C clara_reply   → 최종답변
+    var cat  = String(values[r][3] || '').trim();   // D category
     if (!situ && !ans) continue;
-    var lang = ci.lang >= 0 ? String(values[r][ci.lang] || '').trim() : '';
     if (!lang) lang = guessLang_(ans || situ);
     var id = 'sheet_' + r;
     if (fbGet('cs/corpus/' + id)) continue; // 재실행 멱등
-    fbSet('cs/corpus/' + id, { '상황요약': situ, '최종답변': ans, lang: lang, origin: '구축', src: 'sheet' });
+    fbSet('cs/corpus/' + id, {
+      '상황요약': situ, '최종답변': ans, lang: lang, category: cat || null, origin: '구축', src: 'sheet'
+    });
     n++;
   }
-  Logger.log('시트 임포트 완료: ' + n + '건 (situ=' + header[ci.situ] + ', ans=' + header[ci.ans]
-    + ', lang=' + (ci.lang >= 0 ? header[ci.lang] : '추정') + ')');
+  Logger.log('시트 임포트 완료: corpus +' + n + '건');
 }
 
 // (1b) Gmail 마이닝 → cs/corpus (게스트 메시지 ↔ 클라라 회신 쌍)
