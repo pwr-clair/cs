@@ -596,6 +596,7 @@ function makeDraftFor_(msgId, inbox) {
     origMsg: (inbox.parsed && inbox.parsed.message) || null, // 승인 UI에 게스트 원문 표시용
     sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
     room: sirvoy ? sirvoy.room : null,
+    receivedAt: inbox.receivedAt || null,       // 게스트 원 메일 수신시각(정렬·지난문의 판별용, inbox에서 승계)
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
   };
   fbSet('cs/drafts/' + msgId, rec);
@@ -604,6 +605,26 @@ function makeDraftFor_(msgId, inbox) {
   var first = (((inbox.parsed && inbox.parsed.message) || '').split('\n')[0] || '').trim();
   if (first.length > 40) first = first.slice(0, 40) + '…';
   tgNotify_('[PWR CS] ' + (inbox.guest || '게스트') + ' (' + (rec.room || '미상') + ') ' + first + ' → 초안 대기');
+}
+
+// (2b) 1회성 백필: receivedAt 없는 기존 draft에 inbox의 receivedAt 승계.
+//   - 추가만(다른 필드·상태 불변), 멱등(이미 있으면 스킵). 발송/예산/파서 미접촉.
+//   - Gmail 미사용(fbGet/fbUpdate만) → 예산 미차감. 백로그 정렬·지난문의 판별 정확도 확보용.
+//   Clara가 GAS 에디터에서 1회 실행.
+function backfillDraftReceivedAt() {
+  var drafts = fbGet('cs/drafts'); if (!drafts) { Logger.log('drafts 없음'); return; }
+  var inbox = fbGet('cs/inbox') || {};
+  var ids = Object.keys(drafts), filled = 0, skipped = 0, noSrc = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d) continue;
+    if (d.receivedAt) { skipped++; continue; }            // 이미 있음 → 멱등 스킵
+    var src = (inbox[id] || {}).receivedAt;
+    if (!src) { noSrc++; continue; }                        // inbox에 없으면 앱이 createdAt 폴백
+    fbUpdate('cs/drafts/' + id, { receivedAt: src });       // 추가만
+    filled++;
+  }
+  Logger.log('backfill 완료 — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
 }
 
 // corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)

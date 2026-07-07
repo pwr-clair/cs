@@ -149,6 +149,12 @@ button{font-family:inherit;}
 .err-row .b{flex:0 0 auto;padding:8px 14px;}
 .sent-body{border-left-color:var(--go-soft);}
 
+.bulkbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--warn-soft);border:1px solid #EFCFC5;border-radius:var(--rs);padding:9px 12px;margin-bottom:12px;}
+.bulkbar .t{font-size:10.5px;color:#8F3323;line-height:1.4;}
+.bulkbar .t b{font-weight:700;}
+.bulkbar button{flex:0 0 auto;font-size:11px;font-weight:700;color:#fff;background:var(--wait-red);border:1px solid var(--wait-red);border-radius:100px;padding:7px 13px;cursor:pointer;white-space:nowrap;}
+.bulkbar button:active{transform:scale(.98);}
+
 .empty{text-align:center;color:var(--muted);font-size:12px;padding:42px 0 30px;}
 .empty .big{font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--ink2);margin-bottom:5px;}
 
@@ -213,6 +219,7 @@ button{font-family:inherit;}
 
   <!-- 대기 (실데이터 cs/drafts pending) -->
   <div class="pane show" id="p0">
+    <div id="bulkBar"></div>
     <div id="waitList"></div>
     <div class="empty" id="emptyWait" style="display:none;"><div class="big">대기 중인 초안 없음</div>새 초안이 생성되면 여기에 표시됩니다.</div>
   </div>
@@ -336,13 +343,13 @@ function draftCard(id,d){
   if(st==='approved') right='<span class="status approved"><span class="spinner"></span>발송 대기중</span>';
   else if(st==='sending') right='<span class="status sending"><span class="spinner"></span>발송 중</span>';
   else if(st==='error') right='<span class="status error">발송 실패</span>';
-  else right='<span class="time">'+esc(fmtTime(d.createdAt))+'</span>';
+  else right='<span class="time">'+esc(fmtKST(d.receivedAt||d.createdAt))+' 도착</span>';
 
   let actions;
   if(st==='pending'){
     actions='<div class="btns">'+
       '<button class="b" onclick="toggleEdit(\''+id+'\')">'+(editing?'편집 닫기':'수정')+'</button>'+
-      '<button class="b skip" disabled title="이후 단계">이미 처리</button>'+
+      '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존·발송 안 됨)">지난 문의</button>'+
       '<button class="b go" onclick="approveDraft(\''+id+'\')">승인 · 발송</button>'+
     '</div>';
   } else if(st==='error'){
@@ -376,20 +383,38 @@ function fmtTime(iso){
     return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
   catch(e){ return '—'; }
 }
+// ── 순수 로직 (jsc 테스트 16/0 PASS와 동일 구현) ──
+// 게스트 원 메일 수신시각(ms). receivedAt 우선, 없으면 createdAt 폴백(기존 백로그 대응).
+function msgTimeMs(d){ const iso=(d&&(d.receivedAt||d.createdAt))||null; if(!iso) return 0; const t=Date.parse(iso); return isNaN(t)?0:t; }
+// 오늘 0시(KST) epoch ms — 기기 시간대 무관하게 KST 자정 산출
+function kstDayStartMs(nowMs){ const k=new Date(nowMs+9*3600000); return Date.UTC(k.getUTCFullYear(),k.getUTCMonth(),k.getUTCDate())-9*3600000; }
+// 대기·보냄 정렬 비교자: 수신 시각 최신순(desc). a,b = [id, draft]
+function waitCmpDesc(a,b){ return msgTimeMs(b[1])-msgTimeMs(a[1]); }
+// KST 표시 (기기 시간대 무관)
+function fmtKST(iso){ if(!iso) return '—'; const t=Date.parse(iso); if(isNaN(t)) return '—'; const k=new Date(t+9*3600000);
+  return (k.getUTCMonth()+1)+'/'+k.getUTCDate()+' '+String(k.getUTCHours()).padStart(2,'0')+':'+String(k.getUTCMinutes()).padStart(2,'0'); }
 
 function renderWait(){
   const list=document.getElementById('waitList');
   const empty=document.getElementById('emptyWait');
-  const inflight=['pending','approved','sending','error'];
+  const bulkBar=document.getElementById('bulkBar');
+  const inflight=['pending','approved','sending','error']; // dismissed·sent 제외
   const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
     .filter(([k,d])=> d && inflight.indexOf(d.status||'pending')>=0);
-  // 대기 카운터 = 조작 필요 건(pending + error)
+  // 대기 카운터 = 조작 필요 건(pending + error) — dismissed 제외
   const actionable=entries.filter(([k,d])=>{const s=d.status||'pending';return s==='pending'||s==='error';}).length;
   document.getElementById('nWait').textContent=actionable;
   document.getElementById('tWait').textContent=actionable;
+  // 일괄 dismiss 대상 = 오늘 0시(KST) 이전 수신한 pending 초안
+  const threshold=kstDayStartMs(Date.now());
+  const staleN=entries.filter(([k,d])=>(d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold).length;
+  bulkBar.innerHTML = staleN
+    ? '<div class="bulkbar"><div class="t"><b>지난 문의 '+staleN+'건</b> — 오늘 0시(KST) 이전 수신분. 이미 익스트라넷에서 답했다면 한 번에 치우세요.</div>'+
+      '<button onclick="bulkDismiss()">모두 지난 처리</button></div>'
+    : '';
   if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  entries.sort((a,b)=> String(a[1].createdAt||'').localeCompare(String(b[1].createdAt||'')));
+  entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
   list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
 }
 
@@ -398,7 +423,7 @@ function renderSent(){
   const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status==='sent');
   const t=document.getElementById('tSent'); if(t) t.textContent=entries.length||'—';
   if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
-  entries.sort((a,b)=> String(b[1].sentAt||'').localeCompare(String(a[1].sentAt||'')));
+  entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
   list.innerHTML=entries.map(([k,d])=>sentCard(k,d)).join('');
 }
 function sentCard(id,d){
@@ -430,6 +455,26 @@ function approveDraft(id){
 function retryDraft(id){
   update(ref(db,'cs/drafts/'+id),{status:'approved',errorMsg:null,approvedAt:new Date().toISOString()})
     .then(()=>toast('재시도 — 발송 대기')).catch(e=>toast('재시도 실패: 권한 확인'));
+}
+// 지난 문의 치우기(원탭) — status:dismissed. 삭제 아님(데이터 보존). 발송 워커·학습 루프는 status!=='approved'/'sent'이라 자연 제외.
+function dismissDraft(id){
+  const d=drafts[id];
+  if(!d || (d.status||'pending')!=='pending'){ toast('대기 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호
+  update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissedAt:new Date().toISOString()})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; toast('지난 문의로 치움'); })
+    .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
+}
+// 일괄: 오늘 0시(KST) 이전 수신한 pending 전부 dismissed (confirm 1회 — 발송 컨펌과 별개, 허용됨)
+function bulkDismiss(){
+  const threshold=kstDayStartMs(Date.now());
+  const ids=Object.keys(drafts||{}).filter(id=>{const d=drafts[id];
+    return d && (d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold;});
+  if(!ids.length){ toast('해당하는 지난 문의 없음'); return; }
+  if(!confirm('오늘 0시(KST) 이전에 받은 대기 문의 '+ids.length+'건을 모두 "지난 문의"로 치울까요?\n삭제 아님 · 데이터 보존 · 발송되지 않습니다.')) return;
+  const now=new Date().toISOString();
+  const patch={}; ids.forEach(id=>{ patch[id+'/status']='dismissed'; patch[id+'/dismissedAt']=now; });
+  update(ref(db,'cs/drafts'),patch) // 다중 경로 1회 쓰기
+    .then(()=>toast(ids.length+'건 지난 문의로 치움')).catch(e=>toast('일괄 치우기 실패: 쓰기 권한 확인'));
 }
 function toggleEdit(id){
   if(editingIds.has(id)) editingIds.delete(id);
@@ -486,6 +531,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 // onclick 핸들러 노출 (module 스코프)
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
+window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss;
 </script>
 </body>
 </html>
