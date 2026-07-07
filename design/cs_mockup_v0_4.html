@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PWR CS DESK — 목업 v0.4</title>
+<title>PWR CS DESK — 목업 v0.4.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
@@ -15,9 +15,6 @@
   --ink2:#5D6771;
   --muted:#93938B;
   --line:#E5E1D7;
-  --board:#141A21;      /* 전광판만 어둡게 — 시그니처 */
-  --board-line:#2A323C;
-  --board-ink:#ECE8DF;
   --go:#177A54;
   --go-soft:#E2F1E9;
   --night:#33509E;
@@ -26,8 +23,7 @@
   --warn-soft:#F9E9E4;
   --amber:#96731C;
   --amber-soft:#F5EEDA;
-  --wait-red:#B5342A;   /* v0.4: 대기 강조 — 진한 빨강(라이트 배경용) */
-  --wait-board:#F2543D; /* v0.4: 대기 강조 — 전광판(다크) 대비용 */
+  --wait-red:#B5342A;   /* 대기 강조 — 진한 빨강 */
   --r:14px; --rs:9px;
   --mono:'Space Grotesk','Pretendard Variable',monospace;
 }
@@ -36,39 +32,38 @@ html,body{background:var(--paper);color:var(--ink);font-family:'Pretendard Varia
 button{font-family:inherit;}
 .wrap{max-width:430px;margin:0 auto;padding:14px 12px 44px;}
 
-/* ── 전광판 (유일한 다크 요소) ── */
-.board{background:var(--board);border-radius:var(--r);padding:13px 14px 11px;margin-bottom:12px;position:relative;overflow:hidden;color:var(--board-ink);transition:box-shadow .3s;}
-.board::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.14) 3px 4px);pointer-events:none;}
+/* ── 상단 헤더 (v0.4.1: 다크 전광판 제거 → 밝은 카드형) ── */
+.board{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px 11px;margin-bottom:12px;position:relative;overflow:hidden;color:var(--ink);box-shadow:0 1px 3px rgba(35,46,56,.05);transition:box-shadow .3s;}
 .b-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;position:relative;z-index:1;}
 .b-title{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:2.5px;}
-.b-title em{font-style:normal;color:#5BD59B;}
-.mock-tag{font-family:var(--mono);font-size:8.5px;color:#F08A76;letter-spacing:1px;margin-left:6px;}
+.b-title em{font-style:normal;color:var(--go);}
+.mock-tag{font-family:var(--mono);font-size:8.5px;color:#B25B3D;letter-spacing:1px;margin-left:6px;}
 /* v0.4-①: 자동발송 ON 상단 배지 (켜둔 걸 잊지 않게) */
-.auto-flag{display:none;align-items:center;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:1px;color:#0D1218;background:#5BD59B;border-radius:100px;padding:2px 8px;margin-left:8px;vertical-align:2px;}
+.auto-flag{display:none;align-items:center;font-family:var(--mono);font-size:8.5px;font-weight:700;letter-spacing:1px;color:#fff;background:var(--go);border-radius:100px;padding:2px 8px;margin-left:8px;vertical-align:2px;}
 .auto-on .auto-flag{display:inline-flex;animation:pulse 1.6s ease-in-out infinite;}
-@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.55;}}
-.auto-on .board{box-shadow:0 0 0 2px #5BD59B,0 0 20px rgba(91,213,155,.35);}
-.b-clock{font-family:var(--mono);font-size:13px;color:#9AA2AB;letter-spacing:1px;}
-.b-clock b{color:var(--board-ink);font-weight:500;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+.auto-on .board{box-shadow:0 0 0 2px #34B27E,0 0 18px rgba(52,178,126,.30);}
+.b-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:1px;}
+.b-clock b{color:var(--ink);font-weight:500;}
 .b-row{display:flex;gap:6px;position:relative;z-index:1;}
-.tile{flex:1;background:#0D1218;border:1px solid var(--board-line);border-radius:var(--rs);padding:7px 4px 6px;text-align:center;}
+.tile{flex:1;background:var(--paper);border:1px solid var(--line);border-radius:var(--rs);padding:7px 4px 6px;text-align:center;}
 .tile .n{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1.1;}
-.tile .l{font-size:9px;color:#7C848D;letter-spacing:1.5px;margin-top:2px;}
-.tile.t-wait{border-color:rgba(242,84,61,.45);}
-.tile.t-wait .n{color:var(--wait-board);}           /* v0.4-④: 대기 남색/앰버 → 진한 빨강 */
-.tile.t-wait .l{color:#D98A80;}
-.tile.t-task .n{color:#F08A76;}
-.tile.t-sugg .n{color:#8AA3E8;}
-.tile.t-rate .n{color:#5BD59B;}
+.tile .l{font-size:9px;color:var(--muted);letter-spacing:1.5px;margin-top:2px;}
+.tile.t-wait{border-color:rgba(181,52,42,.35);background:#FBF1EF;}
+.tile.t-wait .n{color:var(--wait-red);}             /* v0.4-④: 대기 → 진한 빨강 (라이트 일원화) */
+.tile.t-wait .l{color:#A85A4F;}
+.tile.t-task .n{color:#C8552F;}
+.tile.t-sugg .n{color:var(--night);}
+.tile.t-rate .n{color:var(--go);}
 
 /* v0.4-③: Gmail 예산 게이지 (상단 카운터 옆, 전광판 내부) */
 .budget{display:flex;align-items:center;gap:8px;margin-top:9px;position:relative;z-index:1;}
-.budget .bl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:#7C848D;min-width:34px;}
-.budget .bar{flex:1;height:6px;border-radius:100px;background:#0D1218;border:1px solid var(--board-line);overflow:hidden;}
-.budget .bar i{display:block;height:100%;border-radius:100px;background:#5BD59B;transition:width .4s;}
-.budget .bv{font-family:var(--mono);font-size:10px;color:#9AA2AB;min-width:48px;text-align:right;}
-.budget.warn .bar i{background:var(--wait-board);}   /* 80%+ 임박 시 색 경고 */
-.budget.warn .bv{color:#F2A08D;}
+.budget .bl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--muted);min-width:34px;}
+.budget .bar{flex:1;height:6px;border-radius:100px;background:var(--paper);border:1px solid var(--line);overflow:hidden;}
+.budget .bar i{display:block;height:100%;border-radius:100px;background:var(--go);transition:width .4s;}
+.budget .bv{font-family:var(--mono);font-size:10px;color:var(--ink2);min-width:48px;text-align:right;}
+.budget.warn .bar i{background:var(--wait-red);}     /* 80%+ 임박 시 색 경고 */
+.budget.warn .bv{color:var(--wait-red);}
 .budget.mini{margin-top:5px;opacity:.7;}
 .budget.mini .bl,.budget.mini .bv{font-size:8px;}
 .budget.mini .bar{height:4px;}
@@ -199,7 +194,7 @@ textarea.editbox{width:100%;border:1px solid var(--night);border-radius:var(--rs
 
   <div class="board">
     <div class="b-top">
-      <div class="b-title">PWR <em>CS</em> DESK <span class="mock-tag">MOCK v0.4</span><span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span></div>
+      <div class="b-title">PWR <em>CS</em> DESK <span class="mock-tag">MOCK v0.4.1</span><span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span></div>
       <div class="b-clock"><b id="clk">--:--</b> KST</div>
     </div>
     <div class="b-row">
@@ -403,7 +398,7 @@ Could you share the last 4 digits of the card and the two charge dates? Payments
   </div>
 
   <div class="footnote">
-    MOCK v0.4 — 실데이터·Firebase 연결 없음<br>
+    MOCK v0.4.1 — 실데이터·Firebase 연결 없음<br>
     Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱 → Gmail 회신 발송<br>
     자동발송 <b>ON = 전건 즉시 자동발송</b> · <b>OFF = 전건 승인(수동)</b> · 클라라가 언제든 전환 · Gmail 예산 초과 시 CS 자동 중단(HK 보호)
   </div>
