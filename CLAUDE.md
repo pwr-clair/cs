@@ -50,6 +50,9 @@ OTA 알림메일 → Gmail(라벨/필터) → GAS 1분 폴링 → 파싱 → Fir
 - 발송 도달성: OTA 알림메일의 회신 경로로 게스트 도달 확실(클라라 확인). M1에서 1회만 재확인.
 - GAS 명명: HK GAS = PWR-HK-Engine (구 ParadiseWalk-CS, 2026-07-04 개명). CS GAS = PWR-CS-Engine.
   과거 문서에 ParadiseWalk-CS로 표기된 것은 전부 HK 쪽을 가리킴.
+- CS 엔진 실행 계정: **paradisewalkresidence@gmail.com** (부킹 알림 실수신 계정, 2026-07-07 이사).
+  joi.hurricane 쪽 구 프로젝트는 트리거 없는 폐가. **HK와 Gmail 쿼터 완전 분리됨** (다른 계정).
+  코드는 계정 무관이라 이사로 인한 코드 변경은 없음. Gmail 예산 가드(CS_GMAIL_BUDGET)는 여전히 유효(CS 자체 상한).
 
 ## 5. cs/ 네임스페이스
 cs/

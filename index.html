@@ -135,6 +135,19 @@ button{font-family:inherit;}
 .b:disabled{opacity:.45;cursor:not-allowed;}
 .b.go:disabled{background:var(--go);}
 .readonly-note{font-size:9px;color:var(--muted);text-align:center;margin-top:8px;}
+.status{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;border-radius:100px;padding:2px 9px;margin-left:auto;}
+.status.approved{background:var(--amber-soft);color:var(--amber);}
+.status.sending{background:var(--night-soft);color:var(--night);}
+.status.error{background:var(--warn-soft);color:var(--warn);}
+.spinner{width:9px;height:9px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.auto-badge{font-size:8.5px;font-weight:700;color:#fff;background:var(--go);border-radius:100px;padding:1px 7px;margin-left:5px;}
+.edited-badge{font-size:8.5px;font-weight:700;color:var(--night);background:var(--night-soft);border-radius:100px;padding:1px 7px;margin-left:5px;}
+.editbox{width:100%;border:1px solid var(--night);border-radius:var(--rs);padding:9px 10px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink);min-height:96px;margin:8px 0 4px;resize:vertical;}
+.err-row{display:flex;align-items:center;gap:8px;}
+.err-row .errmsg{flex:1;font-size:10.5px;color:var(--warn);}
+.err-row .b{flex:0 0 auto;padding:8px 14px;}
+.sent-body{border-left-color:var(--go-soft);}
 
 .empty{text-align:center;color:var(--muted);font-size:12px;padding:42px 0 30px;}
 .empty .big{font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--ink2);margin-bottom:5px;}
@@ -165,7 +178,7 @@ button{font-family:inherit;}
 
   <div class="board">
     <div class="b-top">
-      <div class="b-title">PWR <em>CS</em> DESK <span class="stage-tag">M2b·1</span></div>
+      <div class="b-title">PWR <em>CS</em> DESK <span class="stage-tag">M2b·2</span></div>
       <div class="b-right"><span class="b-clock"><b id="clk">--:--</b> KST</span><button class="logout" onclick="logout()">로그아웃</button></div>
     </div>
     <span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span>
@@ -188,14 +201,14 @@ button{font-family:inherit;}
       <span class="knob" id="swKnob">☀</span><span class="lab" id="swLab">수동</span>
     </div>
   </div>
-  <div class="auto-hint">이 토글은 <code style="font-family:var(--mono)">cs/config/autoSend</code>에 저장됩니다 · <b>발송 연동은 M2b-2</b> (지금은 값만 기록, 동작 영향 없음)</div>
+  <div class="auto-hint">ON = 새 초안 중 <b>confidence 0.8 이상</b>만 자동 발송(그 미만은 대기) · OFF = 전건 승인 · 저장 위치 <code style="font-family:var(--mono)">cs/config/autoSend</code></div>
 
   <div class="tabs">
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
     <button class="tab" onclick="showTab(1,this)">업무<span class="n">—</span></button>
     <button class="tab" onclick="showTab(2,this)">제안<span class="n">—</span></button>
     <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
-    <button class="tab" onclick="showTab(4,this)">보냄<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(4,this)">보냄<span class="n" id="tSent">—</span></button>
   </div>
 
   <!-- 대기 (실데이터 cs/drafts pending) -->
@@ -208,10 +221,10 @@ button{font-family:inherit;}
   <div class="pane" id="p1"><div class="empty"><div class="big">M2b-2 / M3</div>업무 탭은 이후 단계에서 연동됩니다.</div></div>
   <div class="pane" id="p2"><div class="empty"><div class="big">M2b-2 / M3</div>제안 탭은 이후 단계에서 연동됩니다.</div></div>
   <div class="pane" id="p3"><div class="empty"><div class="big">M2b-2 / M3</div>후기 탭은 이후 단계에서 연동됩니다.</div></div>
-  <div class="pane" id="p4"><div class="empty"><div class="big">M2b-2</div>보냄(발송 기록)은 발송 기능과 함께 연동됩니다.</div></div>
+  <div class="pane" id="p4"><div id="sentList"></div></div>
 
   <div class="footnote">
-    M2b-1 · 읽기 전용 — 승인/수정/발송은 <b>M2b-2</b>에서 활성화<br>
+    M2b-2 · 승인·수정·발송 활성 — 승인 시 GAS가 원 스레드에 회신 발송<br>
     Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱 · 쓰기 허용은 자동발송 토글 하나뿐
   </div>
 
@@ -221,7 +234,7 @@ button{font-family:inherit;}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getDatabase, ref, onValue, set, update } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 // HK와 동일 프로젝트의 공개 web config (비밀 아님). cs/* 만 사용.
@@ -244,6 +257,7 @@ const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local
 
 let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null;
+let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
 
 // ── 로그인 ──
 async function doLogin(){
@@ -281,13 +295,13 @@ onAuthStateChanged(auth, (user)=>{
 
 function startListeners(){
   const permErr = (path)=> (e)=>{ toast('읽기 권한 오류: '+path+' — Firebase 규칙 확인'); };
-  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderWait(); }, permErr('cs/drafts'));
+  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderAuto(); renderBudget(); }
+function renderAll(){ renderWait(); renderSent(); renderAuto(); renderBudget(); }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -310,27 +324,49 @@ function confDots(c){
 }
 
 function draftCard(id,d){
-  const imgs = extractImgs(d.reply);
-  const replyShown = imgs.length ? stripImgs(d.reply) : String(d.reply||'');
-  const cat = d.category ? '<span class="cat">'+esc(d.category)+'</span>' : '';
+  const st=d.status||'pending';
+  const imgs=extractImgs(d.reply);
+  const baseReply=String(d.reply||'');
+  const replyShown=imgs.length?stripImgs(d.reply):baseReply;
+  const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
+  const editing=editingIds.has(id);
+  const editVal=(edits[id]!=null)?edits[id]:baseReply;
+
+  let right;
+  if(st==='approved') right='<span class="status approved"><span class="spinner"></span>발송 대기중</span>';
+  else if(st==='sending') right='<span class="status sending"><span class="spinner"></span>발송 중</span>';
+  else if(st==='error') right='<span class="status error">발송 실패</span>';
+  else right='<span class="time">'+esc(fmtTime(d.createdAt))+'</span>';
+
+  let actions;
+  if(st==='pending'){
+    actions='<div class="btns">'+
+      '<button class="b" onclick="toggleEdit(\''+id+'\')">'+(editing?'편집 닫기':'수정')+'</button>'+
+      '<button class="b skip" disabled title="이후 단계">이미 처리</button>'+
+      '<button class="b go" onclick="approveDraft(\''+id+'\')">승인 · 발송</button>'+
+    '</div>';
+  } else if(st==='error'){
+    actions='<div class="err-row"><div class="errmsg">'+esc(d.errorMsg||'발송 오류')+'</div>'+
+      '<button class="b go" onclick="retryDraft(\''+id+'\')">재시도</button></div>';
+  } else {
+    actions='<div class="readonly-note">'+(st==='approved'?'승인됨 — GAS가 원 스레드에 발송합니다':'발송 처리 중…')+'</div>';
+  }
+  const editArea=(st==='pending'&&editing)
+    ? '<textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
+
   return '<div class="card">'+
     '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
-      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+
-      '<span class="time">'+esc(fmtTime(d.createdAt))+'</span></div>'+
+      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+right+'</div>'+
     '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · 예약 '+esc(d.bookingId||'—')+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    '<div class="draft"><div class="who">초안 · <b>클라라 말투</b></div>'+
+    '<div class="draft"><div class="who">초안 · <b>클라라 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
       '<div class="reply">'+esc(replyShown||'—')+'</div>'+
-      (d.replyKo ? '<div class="gloss">'+esc(d.replyKo)+'</div>' : '')+
-      (imgs.length ? thumbsHtml(imgs) : '')+
+      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
+      (imgs.length?thumbsHtml(imgs):'')+
     '</div>'+
+    editArea+
     confDots(d.confidence)+
-    '<div class="btns">'+
-      '<button class="b" disabled title="M2b-2에서 활성화">수정</button>'+
-      '<button class="b skip" disabled title="M2b-2에서 활성화">이미 처리</button>'+
-      '<button class="b go" disabled title="M2b-2에서 활성화">승인 · 발송</button>'+
-    '</div>'+
-    '<div class="readonly-note">읽기 전용 (M2b-1) — 발송/승인/수정은 M2b-2</div>'+
+    actions+
   '</div>';
 }
 
@@ -344,18 +380,63 @@ function fmtTime(iso){
 function renderWait(){
   const list=document.getElementById('waitList');
   const empty=document.getElementById('emptyWait');
-  const entries=Object.keys(drafts||{})
-    .map(k=>[k,drafts[k]])
-    .filter(([k,d])=> d && d.status==='pending');
-  const cnt=entries.length;
-  document.getElementById('nWait').textContent=cnt;
-  document.getElementById('tWait').textContent=cnt;
-  if(!cnt){ list.innerHTML=''; empty.style.display='block'; return; }
+  const inflight=['pending','approved','sending','error'];
+  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
+    .filter(([k,d])=> d && inflight.indexOf(d.status||'pending')>=0);
+  // 대기 카운터 = 조작 필요 건(pending + error)
+  const actionable=entries.filter(([k,d])=>{const s=d.status||'pending';return s==='pending'||s==='error';}).length;
+  document.getElementById('nWait').textContent=actionable;
+  document.getElementById('tWait').textContent=actionable;
+  if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  // createdAt 오름차순(오래된 것 먼저)
   entries.sort((a,b)=> String(a[1].createdAt||'').localeCompare(String(b[1].createdAt||'')));
   list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
 }
+
+function renderSent(){
+  const list=document.getElementById('sentList'); if(!list) return;
+  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status==='sent');
+  const t=document.getElementById('tSent'); if(t) t.textContent=entries.length||'—';
+  if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
+  entries.sort((a,b)=> String(b[1].sentAt||'').localeCompare(String(a[1].sentAt||'')));
+  list.innerHTML=entries.map(([k,d])=>sentCard(k,d)).join('');
+}
+function sentCard(id,d){
+  const final=String(d.finalReply||d.reply||'');
+  const summary=final.replace(IMG_RE,'').replace(/\s+/g,' ').trim();
+  const clip=summary.slice(0,90)+(summary.length>90?'…':'');
+  return '<div class="card">'+
+    '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
+      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
+      (d.autoApproved?'<span class="auto-badge">자동</span>':'')+
+      (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
+      '<span class="time">'+esc(fmtTime(d.sentAt))+' 발송</span></div>'+
+    '<div class="msg sent-body"><div class="who">SENT</div><div class="body">'+esc(clip||'—')+'</div></div>'+
+  '</div>';
+}
+
+// ── 승인/수정/발송 (쓰기 지점: cs/drafts/{id} 만) ──
+function approveDraft(id){
+  const d=drafts[id];
+  if(!d || d.status!=='pending'){ toast('이미 처리된 초안입니다'); return; } // 이중 조작 방지
+  if(!confirm('발송할까요?')) return; // 유일한 확인 다이얼로그
+  const base=String(d.reply||'');
+  const final=(editingIds.has(id)&&edits[id]!=null)?edits[id]:base;
+  const edited=final.trim()!==base.trim();
+  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,approvedAt:new Date().toISOString()})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기'); })
+    .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
+}
+function retryDraft(id){
+  update(ref(db,'cs/drafts/'+id),{status:'approved',errorMsg:null,approvedAt:new Date().toISOString()})
+    .then(()=>toast('재시도 — 발송 대기')).catch(e=>toast('재시도 실패: 권한 확인'));
+}
+function toggleEdit(id){
+  if(editingIds.has(id)) editingIds.delete(id);
+  else { editingIds.add(id); if(edits[id]==null) edits[id]=String((drafts[id]||{}).reply||''); }
+  renderWait();
+}
+function editInput(id,val){ edits[id]=val; } // 재렌더 안 함 → 포커스 유지
 
 function renderAuto(){
   document.body.classList.toggle('auto-on',auto);
@@ -365,14 +446,14 @@ function renderAuto(){
   document.getElementById('swKnob').textContent=auto?'⚡':'☀';
   document.getElementById('swLab').textContent=auto?'자동':'수동';
   document.getElementById('autoTxt').innerHTML=auto
-    ? '자동응대 <b>자동발송 ON</b> — 새 초안 전건 즉시 발송(M2b-2 연동)'
+    ? '자동응대 <b>자동발송 ON</b> — confidence 0.8+ 초안 자동 발송'
     : '자동응대 <b>수동 승인 모드</b> — 전건 승인';
 }
 // 유일한 쓰기: cs/config/autoSend
 function toggleAuto(){
   const next=!auto;
   set(ref(db,'cs/config/autoSend'), next)
-    .then(()=> toast(next?'자동발송 ON 저장됨 (발송 연동은 M2b-2)':'수동 승인 모드 저장됨'))
+    .then(()=> toast(next?'자동발송 ON — 이후 confidence 0.8+ 초안 자동 발송':'수동 승인 모드 — 전건 승인'))
     .catch(e=> toast('설정 저장 실패: 쓰기 권한 확인'));
 }
 
@@ -404,6 +485,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 
 // onclick 핸들러 노출 (module 스코프)
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
+window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
 </script>
 </body>
 </html>

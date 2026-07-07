@@ -121,6 +121,111 @@ function mirrorBudget_() {
   try { fbSet('cs/meta/gmailBudget', snap); } catch (e) { Logger.log('budget mirror 실패: ' + e); }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// M2b-2 — 승인 발송 워커 + autoSend + 학습 루프
+// ══════════════════════════════════════════════════════════════════
+
+// 순수(테스트용): 발송 잠금 판정. status/sendingAt(iso)/now(ms) → 'skip'|'stuck-error'|'lock'
+function sendDecision_(status, sendingAtIso, nowMs) {
+  if (status === 'sending') {
+    var since = sendingAtIso ? (nowMs - Date.parse(sendingAtIso)) : Infinity;
+    return since > 10 * 60 * 1000 ? 'stuck-error' : 'skip'; // 10분+ 방치 → 스턱 처리
+  }
+  if (status !== 'approved') return 'skip';
+  return 'lock';
+}
+// 순수(테스트용): autoSend 안전핀. ON && confidence>=0.8 이어야 자동 승인.
+function autoApproveDecision_(on, confidence) {
+  return !!on && typeof confidence === 'number' && confidence >= 0.8;
+}
+// 순수(테스트용): 학습 분기. 수정 발송 → learn(초안·수정본 쌍), 무수정 → corpus(정답).
+function learnTarget_(edited) { return edited ? 'learn' : 'corpus'; }
+
+// 원 Gmail 스레드에 reply (새 메일 작성 금지). 예산 가드 경유. 예산 없으면 false.
+function gmReplyThread_(threadId, body) {
+  if (!budgetGate_('reply')) return false;
+  var th = GmailApp.getThreadById(threadId);
+  if (!th) throw new Error('스레드 못 찾음: ' + threadId);
+  th.reply(body);
+  return true;
+}
+
+// autoSend: pending & 조건 충족 → approved (같은 run 발송 워커가 발송)
+function autoApprovePass_() {
+  var on = (fbGet('cs/config/autoSend') === true);
+  if (!on) return;
+  var drafts = fbGet('cs/drafts'); if (!drafts) return;
+  var ids = Object.keys(drafts), n = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d || d.status !== 'pending') continue;
+    if (!autoApproveDecision_(on, d.confidence)) continue; // 안전핀: <0.8 또는 null → pending 유지
+    fbUpdate('cs/drafts/' + id, {
+      status: 'approved', finalReply: (d.reply || ''), editedByClara: false,
+      autoApproved: true, approvedAt: new Date().toISOString()
+    });
+    n++;
+  }
+  if (n) Logger.log('autoSend 자동 승인: ' + n + '건');
+}
+
+// approved 초안 발송 (최신상태 재확인 → sending 잠금 → 재조회 → reply → sent/error + 학습)
+function sendApprovedDrafts() {
+  var drafts = fbGet('cs/drafts'); if (!drafts) return;
+  var nowMs = new Date().getTime();
+  var ids = Object.keys(drafts);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d) continue;
+    var dec = sendDecision_(d.status, d.sendingAt, nowMs);
+    if (dec === 'skip') continue;
+    if (dec === 'stuck-error') { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'sending 10분+ 스턱 — error 전환' }); continue; }
+    // dec === 'lock'
+    if (_gmailStop || !gmailAllowed_(1)) break; // 예산 소진 → approved 유지, 다음 run/날
+
+    var fresh = fbGet('cs/drafts/' + id);
+    if (!fresh || fresh.status !== 'approved') continue;         // 최신 상태 재확인(경합/중복 방지)
+    fbUpdate('cs/drafts/' + id, { status: 'sending', sendingAt: new Date().toISOString() });
+    var chk = fbGet('cs/drafts/' + id);
+    if (!chk || chk.status !== 'sending') continue;              // 잠금 확인 실패 → 양보
+
+    var threadId = fresh.threadId || (fbGet('cs/inbox/' + id) || {}).threadId;
+    var finalReply = fresh.finalReply || fresh.editedReply || fresh.reply || '';
+    if (!threadId) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'threadId 없음 — 발송 불가' }); continue; }
+    if (!finalReply) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'finalReply 비어있음' }); continue; }
+
+    try {
+      var ok = gmReplyThread_(threadId, finalReply);
+      if (!ok) { fbUpdate('cs/drafts/' + id, { status: 'approved', sendingAt: null }); break; } // 예산 없음 → 되돌림, 다음 run
+      fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), errorMsg: null });
+      learnFromSend_(id, fresh, finalReply);
+      Logger.log('발송 완료 ' + id + (fresh.autoApproved ? ' (자동)' : ''));
+    } catch (e) {
+      fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: String(e).slice(0, 200) });
+      Logger.log('발송 실패 ' + id + ': ' + e);
+    }
+  }
+}
+
+// 학습 루프: 무수정 → cs/corpus(정답 적재), 수정 → cs/learn(초안·수정본 쌍)
+function learnFromSend_(id, d, finalReply) {
+  try {
+    var inbox = fbGet('cs/inbox/' + id) || {};
+    var orig = (inbox.parsed && inbox.parsed.message) || d.origMsg || '';
+    var lang = d.lang || 'en';
+    if (learnTarget_(d.editedByClara) === 'learn') {
+      fbSet('cs/learn/' + id, {
+        before: d.reply || '', after: finalReply, orig: orig,
+        lang: lang, category: d.category || null, ts: new Date().toISOString()
+      });
+    } else {
+      fbSet('cs/corpus/' + id, {
+        '상황요약': orig, '최종답변': finalReply, lang: lang, category: d.category || null, origin: 'approved'
+      });
+    }
+  } catch (e) { Logger.log('learn 실패 ' + id + ': ' + e); }
+}
+
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
 // 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 5분 주기 1개만 설치.
 function installCsTriggers() {
@@ -149,7 +254,7 @@ function pollCsInbox() {
     if (_gmailStop) break;
     var hadFailure = false;
     for (var m = 0; m < msgs.length; m++) {
-      try { ingestMessage_(msgs[m]); }
+      try { ingestMessage_(msgs[m], threads[t].getId()); }
       catch (e) { Logger.log('적재 실패 msgId=' + safeId_(msgs[m]) + ' : ' + e); hadFailure = true; }
     }
     if (!hadFailure) { gmAddLabel_(threads[t], doneLabel); gmRemoveLabel_(threads[t], label); }
@@ -157,10 +262,14 @@ function pollCsInbox() {
 
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   safeDrafts_();
+  // autoSend: ON & confidence>=0.8 → 자동 승인 (Firebase만, Gmail 미사용)
+  try { autoApprovePass_(); } catch (e) { Logger.log('autoApprove 실패: ' + e); }
+  // 발송 워커: approved → 원 스레드 reply + 학습 (예산 가드). 발송 실패가 위 단계를 막지 않음.
+  try { sendApprovedDrafts(); } catch (e) { Logger.log('발송 워커 실패: ' + e); }
   mirrorBudget_(); // run 종료 시 예산 사용량 미러링
 }
 
-function ingestMessage_(msg) {
+function ingestMessage_(msg, threadId) {
   var msgId = msg.getId();
   var path = 'cs/inbox/' + msgId;
 
@@ -182,6 +291,7 @@ function ingestMessage_(msg) {
     guest: parsed.guest || null,
     lang: parsed.lang || guessLang_(parsed.message || raw.body),
     replyTo: parsed.guestEmail || null,      // 게스트 회신 주소(=발신주소). M2 발송 경로.
+    threadId: threadId || null,              // 원 Gmail 스레드 — 발송 시 이 스레드에 reply
     receivedAt: raw.receivedAt,
     raw: raw,                 // §6c: 파싱 실패해도 raw 는 항상 보존 — 메일 유실 금지
     parsed: parsed.ok ? { message: parsed.message } : null,
@@ -373,6 +483,8 @@ function makeDraftFor_(msgId, inbox) {
     status: 'pending', editedReply: null,
     lang: inbox.lang || 'en', guest: inbox.guest || null, bookingId: inbox.bookingId || null,
     replyTo: inbox.replyTo || null,
+    threadId: inbox.threadId || null,           // 발송 스레드 (없으면 발송 워커가 error 처리)
+    origMsg: (inbox.parsed && inbox.parsed.message) || null, // 승인 UI에 게스트 원문 표시용
     sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
     room: sirvoy ? sirvoy.room : null,
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
