@@ -189,6 +189,10 @@ function sendApprovedDrafts() {
     var chk = fbGet('cs/drafts/' + id);
     if (!chk || chk.status !== 'sending') continue;              // 잠금 확인 실패 → 양보
 
+    if (fresh.emailReply === false) { // 익스피디아 등: 이메일 회신 미지원
+      fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: '익스피디아는 이메일 회신 미지원 — 파트너센트럴에서 초안 복붙 발송' });
+      continue;
+    }
     var threadId = fresh.threadId || (fbGet('cs/inbox/' + id) || {}).threadId;
     var finalReply = fresh.finalReply || fresh.editedReply || fresh.reply || '';
     if (!threadId) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'threadId 없음 — 발송 불가' }); continue; }
@@ -283,10 +287,13 @@ function ingestMessage_(msg, threadId) {
     receivedAt: msg.getDate().toISOString()
   };
 
-  var parsed = parseBooking_(raw); // { ok, source, bookingId, guest, lang, message }
+  var parsed = parseBooking_(raw);
+  // 채널 판별 1차 관문: 3채널(booking/agoda/expedia) 아니면 적재 안 함(라벨 이동은 pollCsInbox가 처리).
+  if (!parsed.channel) { Logger.log('비대상 발신자 스킵(적재 안 함): ' + raw.from); return; }
 
   var rec = {
-    source: parsed.source || 'booking',
+    source: parsed.source || parsed.channel,
+    emailReply: parsed.emailReply !== false, // expedia=false → 발송 워커가 error 처리
     bookingId: parsed.bookingId || null,
     guest: parsed.guest || null,
     lang: parsed.lang || guessLang_(parsed.message || raw.body),
@@ -319,65 +326,157 @@ function ingestMessage_(msg, threadId) {
 //   실패해도 raw 는 ingestMessage_ 에서 항상 보존됨(§6c).
 // ══════════════════════════════════════════════════════════════════
 
-function parseBooking_(raw) {
-  var out = { ok: false, source: 'booking', bookingId: null, guest: null,
-              guestEmail: null, lang: null, message: null, bookingIdMismatch: false,
-              rawTail: false, checkinDate: null, checkoutDate: null,
-              guestCount: null, roomCount: null, propertyName: null };
-  var body = raw.body || '';
-  var subject = raw.subject || '';
-  var from = raw.from || '';
+// ══════════════════════════════════════════════════════════════════
+// 파서 v2 — 3채널(부킹 EN / 아고다 / 익스피디아) 실물 형식 대응.
+//   라벨 필터가 3채널 모두 cs/booking 으로 걸려 폴링에 섞여 옴 → From 도메인으로 채널 판별이 1차 관문.
+// ══════════════════════════════════════════════════════════════════
 
-  // 예약번호 1차: From 로컬파트 앞 숫자 ({번호}-{난수}@guest.booking.com)
+function detectChannel_(from) {
+  var f = String(from || '').toLowerCase();
+  if (f.indexOf('@guest.booking.com') >= 0) return 'booking';
+  if (f.indexOf('agoda-messaging.com') >= 0) return 'agoda';
+  if (f.indexOf('expediapartnercentral.com') >= 0) return 'expedia';
+  return null;
+}
+function newParse_() {
+  return { ok: false, source: null, channel: null, bookingId: null, guest: null, guestEmail: null,
+           lang: null, message: null, bookingIdMismatch: false, rawTail: false,
+           checkinDate: null, checkoutDate: null, guestCount: null, roomCount: null,
+           propertyName: null, emailReply: true };
+}
+
+// 엔트리: 채널 판별 → 채널별 파서. 비대상 발신자는 {channel:null, skip:true} → 적재 안 함.
+function parseBooking_(raw) {
+  var channel = detectChannel_(raw.from);
+  if (!channel) { var s = newParse_(); s.skip = true; return s; }
+  var out = channel === 'booking' ? parseBookingCh_(raw)
+          : channel === 'agoda'   ? parseAgoda_(raw)
+          :                         parseExpedia_(raw);
+  out.channel = channel; out.source = channel;
+  // 공통 이력 오염 방지: 종료마커 실패(rawTail)면 message를 앞 1000자로 제한
+  if (out.rawTail && out.message && out.message.length > 1000) out.message = out.message.slice(0, 1000);
+  return out;
+}
+
+// 1) 부킹 — 영문 템플릿 + 한국어 레거시 폴백
+function parseBookingCh_(raw) {
+  var out = newParse_();
+  var body = raw.body || '', subject = raw.subject || '', from = raw.from || '';
+  var lines = body.split('\n');
+
+  // 게스트명: EN "We received this message from {name}" / KO "{name} 님의 메시지가 도착했습니다"
+  var mEN = subject.match(/We received this message from\s+(.+?)\s*$/i);
+  if (mEN) out.guest = mEN[1].trim();
+  else { var mKO = subject.match(/^(.*?)\s*님의\s*메시지가\s*도착했습니다/); if (mKO) out.guest = mKO[1].trim(); }
+
+  // 예약번호: From {번호}@guest.booking.com (1차, 실측작동) + 본문 Confirmation/Booking number/예약 번호 (교차검증)
   var mFrom = from.match(/([0-9]+)(?:-[a-z0-9.]+)?@guest\.booking\.com/i);
   var fromNum = mFrom ? mFrom[1] : null;
-  // 게스트 회신 주소 = From 의 guest.booking.com 주소 그 자체 (회신 경로 = 발신 주소)
-  var mAddr = from.match(/[\w.\-]+@guest\.booking\.com/i);
-  out.guestEmail = mAddr ? mAddr[0] : null;
-
-  // 예약번호 2차: 본문 "예약 번호: {숫자}"
-  var mBody = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
-  var bodyNum = mBody ? mBody[1] : null;
-
-  // 교차검증: 둘 다 있고 다르면 플래그(적재는 진행), 하나만 있으면 그것 사용
+  out.guestEmail = (from.match(/[\w.\-]+@guest\.booking\.com/i) || [])[0] || null;
+  var confRaw = findLineValue_(lines, 'Confirmation number') || findLineValue_(lines, 'Booking number');
+  var bodyNum = confRaw ? ((String(confRaw).match(/(\d{6,})/) || [])[1] || null) : null;
+  if (!bodyNum) { var mk = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/); if (mk) bodyNum = mk[1]; }
   if (fromNum && bodyNum && fromNum !== bodyNum) out.bookingIdMismatch = true;
   out.bookingId = fromNum || bodyNum || null;
 
-  // 게스트명: 제목 "{게스트명} 님의 메시지가 도착했습니다"
-  var mG = subject.match(/^(.*?)\s*님의\s*메시지가\s*도착했습니다/);
-  if (mG) out.guest = mG[1].trim();
+  // 예약 상세 (EN 라벨 + KO 레거시). normDate_ 가 영문 날짜도 처리.
+  out.checkinDate  = normDate_(findLineValue_(lines, 'Check-in')  || findLineValue_(lines, '체크인'));
+  out.checkoutDate = normDate_(findLineValue_(lines, 'Check-out') || findLineValue_(lines, '체크아웃'));
+  out.guestCount   = findLineValue_(lines, 'Total guests') || findLineValue_(lines, '총 투숙객 수');
+  out.roomCount    = findLineValue_(lines, 'Total rooms')  || findLineValue_(lines, '총 객실 수');
+  out.propertyName = findLineValue_(lines, 'Property name') || findLineValue_(lines, '숙소 명칭');
+  if (!out.guest) out.guest = findLineValue_(lines, 'Guest name');
 
-  // Edit 3 — 예약 상세 정보 블록 필드 추출 (메시지 자르기 전, 전체 본문 기준)
-  var allLines = body.split('\n');
-  out.checkinDate  = normDate_(findLineValue_(allLines, '체크인'));
-  out.checkoutDate = normDate_(findLineValue_(allLines, '체크아웃'));
-  out.guestCount   = findLineValue_(allLines, '총 투숙객 수');
-  out.roomCount    = findLineValue_(allLines, '총 객실 수');
-  out.propertyName = findLineValue_(allLines, '숙소 명칭');
-
-  // Edit 1 — 메시지 본문: "님의 메시지:" 이후 ~ 최초 종료마커 전까지 (줄 단위 매칭).
-  //   결함 대응: "답변 -->"가 실제론 "답변\n\n-->"로 줄바꿈됨 → 문자열 indexOf 실패.
-  //   종료마커: ①독립 줄 "답변"  ②"예약 상세 정보"  ③"© Copyright"  (가장 먼저 등장하는 지점)
-  var startMarker = '님의 메시지:';
-  var si = body.indexOf(startMarker);
+  // 메시지: "{name} said:"(EN) 또는 "님의 메시지:"(KO) 줄 다음 ~ 종료마커 전까지 (줄 단위)
+  var si = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (/said:\s*$/i.test(t) || t.indexOf('님의 메시지:') >= 0) { si = i; break; }
+  }
   if (si >= 0) {
-    var afterLines = body.substring(si + startMarker.length).split('\n');
-    var cut = -1;
-    for (var li = 0; li < afterLines.length; li++) {
-      var ln = afterLines[li].trim();
-      if (ln === '답변' || ln.indexOf('예약 상세 정보') === 0 || ln.indexOf('© Copyright') === 0) { cut = li; break; }
+    if (!out.guest) { var sm = lines[si].trim().match(/^(.*?)\s+said:\s*$/i); if (sm) out.guest = sm[1].trim(); }
+    var msg = [];
+    for (var j = si + 1; j < lines.length; j++) {
+      var u = lines[j].trim();
+      if (u === 'Reply' || u.indexOf('-->') === 0 || u.indexOf('Reservation details') === 0
+          || u === '답변' || u.indexOf('예약 상세 정보') === 0 || u.indexOf('© Copyright') === 0) break;
+      msg.push(lines[j]);
     }
-    if (cut >= 0) {
-      out.message = afterLines.slice(0, cut).join('\n').trim() || null;
-    } else {
-      out.message = afterLines.join('\n').trim() || null; // 마커 없음 → 전체 유지
-      out.rawTail = true;
-    }
+    out.message = msg.join('\n').trim() || null;
+  } else {
+    out.message = body.trim() || null; out.rawTail = true; // 마커 못 찾음 → 전체(상한은 dispatcher에서)
   }
 
-  // Edit 2 — 언어 감지는 절단된 clean message 기준 (꼬리 한국어 오염 방지)
   out.lang = guessLang_(out.message);
-  out.ok = !!(out.bookingId && out.message); // 식별자+메시지 둘 다 잡혀야 파싱 성공
+  out.ok = !!(out.bookingId && out.message);
+  return out;
+}
+
+// 2) 아고다 — 한글 템플릿
+function parseAgoda_(raw) {
+  var out = newParse_();
+  var body = raw.body || '', subject = raw.subject || '', from = raw.from || '';
+  var lines = body.split('\n');
+
+  // 게스트명: 제목 "Reply from {name} (...)" 괄호 전까지, 없으면 From 표시명
+  var mg = subject.match(/Reply from\s+(.+?)\s*\(/i);
+  if (mg) out.guest = mg[1].trim();
+  else { var dm = from.match(/^\s*"?([^"<]+?)"?\s*</); if (dm) out.guest = dm[1].trim(); }
+
+  // 예약번호: 본문 "예약 번호:" (한국어 정규식 그대로)
+  var mk = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
+  out.bookingId = mk ? mk[1] : null;
+
+  // 체크인/아웃: 제목 괄호의 날짜 범위 "Jul 11-12, 2026"
+  var mr = subject.match(/\(([^)]+)\)/);
+  if (mr) {
+    var d = mr[1].match(/([A-Za-z]{3,})\s+(\d{1,2})\s*[-–]\s*(\d{1,2}),?\s*(\d{4})/);
+    if (d) { var mo = monthNum_(d[1]); if (mo) { out.checkinDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[2]); out.checkoutDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[3]); } }
+  }
+
+  // 메시지: 게스트 메시지 첫 블록만 (종료마커 전까지, 헤더 라인 스킵).
+  //   ※ 실물 스펙에 메시지 '시작' 마커가 없어, 종료마커 이전 '첫 산문 블록'을 취함(헤더 제외) — 런타임 확인 필요.
+  var endIdx = lines.length;
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (t.indexOf('아래 원문 메시지') >= 0 || t.indexOf('Did you know?') >= 0 || t.indexOf('이전 메시지') >= 0) { endIdx = i; break; }
+  }
+  var mm = [], started = false;
+  for (var j = 0; j < endIdx; j++) {
+    var raw2 = lines[j], u = raw2.trim();
+    var isHeader = /^예약\s*번호/.test(u) || /^Reply from/i.test(u) || (out.guest && u === out.guest);
+    if (!started) { if (u === '' || isHeader) continue; started = true; mm.push(raw2); }
+    else { if (u === '' || isHeader) break; mm.push(raw2); }
+  }
+  out.message = mm.join('\n').trim() || null;
+
+  out.lang = guessLang_(out.message);
+  out.ok = !!(out.bookingId && out.message);
+  return out;
+}
+
+// 3) 익스피디아 — 한글 템플릿 (예약번호 없음, 이메일 회신 미지원)
+function parseExpedia_(raw) {
+  var out = newParse_();
+  out.emailReply = false; // 이메일 회신 경로 없음 → 발송 워커가 error 처리(파트너센트럴 웹 전용)
+  var body = raw.body || '', subject = raw.subject || '';
+
+  // 게스트명: 제목 "...고객 {name} 님의 메시지"
+  var mg = subject.match(/고객\s+(.+?)\s*님의\s*메시지/);
+  if (mg) out.guest = mg[1].trim();
+
+  // 메시지: "{name} 님이 메시지를 보냈습니다." 다음의 따옴표 인용문
+  var idx = body.indexOf('님이 메시지를 보냈습니다');
+  if (idx >= 0) {
+    var after = body.slice(idx);
+    var q = after.match(/["“”‘’]([\s\S]+?)["“”‘’]/);
+    if (q) out.message = q[1].trim();
+    else { var ls = after.split('\n'); for (var i = 1; i < ls.length; i++) { if (ls[i].trim()) { out.message = ls[i].trim(); break; } } }
+  }
+
+  out.bookingId = null;                       // 실물에 없음 (null 허용)
+  out.lang = guessLang_(out.message);
+  out.ok = !!(out.guest && out.message);      // expedia: 게스트+메시지로 ok 판정
   return out;
 }
 
@@ -411,11 +510,20 @@ function findLineValue_(lines, label) {
   return null;
 }
 
-// 날짜 정규화 → YYYY-MM-DD (YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD / "YYYY년 M월 D일" 지원). 실패 null.
+function monthNum_(s) {
+  var M = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+  return M[String(s || '').slice(0, 3).toLowerCase()] || null;
+}
+// 날짜 정규화 → YYYY-MM-DD. 숫자형(YYYY-MM-DD / . / "YYYY년 M월 D일") + 영문형("Tue 7 Jul 2026"/"Jul 7, 2026"). 실패 null.
 function normDate_(s) {
   if (!s) return null;
   var m = s.match(/(\d{4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/);
-  return m ? (m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3])) : null;
+  if (m) return m[1] + '-' + pad2_(m[2]) + '-' + pad2_(m[3]);
+  var e = s.match(/(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/);        // "Tue 7 Jul 2026" / "7 Jul 2026"
+  if (e && monthNum_(e[2])) return e[3] + '-' + pad2_(monthNum_(e[2])) + '-' + pad2_(e[1]);
+  var e2 = s.match(/([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})/);     // "Jul 7, 2026"
+  if (e2 && monthNum_(e2[1])) return e2[3] + '-' + pad2_(monthNum_(e2[1])) + '-' + pad2_(e2[2]);
+  return null;
 }
 function pad2_(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
 
@@ -484,6 +592,7 @@ function makeDraftFor_(msgId, inbox) {
     lang: inbox.lang || 'en', guest: inbox.guest || null, bookingId: inbox.bookingId || null,
     replyTo: inbox.replyTo || null,
     threadId: inbox.threadId || null,           // 발송 스레드 (없으면 발송 워커가 error 처리)
+    emailReply: inbox.emailReply !== false,     // false(expedia) → 발송 워커가 error 처리
     origMsg: (inbox.parsed && inbox.parsed.message) || null, // 승인 UI에 게스트 원문 표시용
     sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
     room: sirvoy ? sirvoy.room : null,
