@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>Paradise Walk Residence — Guest Guide</title>
-<meta name="description" content="Your arrival & stay guide for Paradise Walk Residence near Incheon Airport — free shuttle, taxi, finding the building, check-in, notice, and contact.">
+<meta name="description" content="Arrival & stay guide for Paradise Walk Residence near Incheon Airport — free shuttle, taxi, finding the building, check-in, notice, and contact. EN / KO / JA / ZH.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,7 +25,7 @@
   --wa:#25D366;
   --r:16px; --rs:11px;
   --mono:'Space Grotesk','Pretendard Variable',sans-serif;
-  --sans:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --sans:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',Meiryo,'PingFang SC','Microsoft YaHei','Noto Sans CJK KR','Segoe UI',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html{-webkit-text-size-adjust:100%;}
@@ -38,7 +38,7 @@ img{display:block;max-width:100%;}
 a{color:var(--night);text-decoration:none;}
 button{font-family:inherit;cursor:pointer;}
 
-/* ---- shell: phone-width, centered on desktop ---- */
+/* ---- shell ---- */
 .wrap{max-width:460px;margin:0 auto;background:var(--paper);min-height:100vh;
   box-shadow:0 0 60px rgba(35,46,56,.06);}
 
@@ -52,40 +52,21 @@ button{font-family:inherit;cursor:pointer;}
   letter-spacing:.5px;margin:6px 0 10px;}
 .hero .sub{color:var(--ink2);font-size:14.5px;text-align:left;}
 
-/* ---- quick nav ---- */
-nav.jump{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow-x:auto;
-  padding:11px 16px;background:rgba(247,245,240,.92);backdrop-filter:blur(8px);
-  border-bottom:1px solid var(--line);scrollbar-width:none;}
+/* ---- sticky top bar: language switch + section nav ---- */
+.topbar{position:sticky;top:0;z-index:6;background:rgba(247,245,240,.95);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
+.langs{display:flex;gap:6px;padding:9px 16px 2px;justify-content:flex-end;flex-wrap:wrap;}
+.lg{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.3px;
+  color:var(--ink2);background:var(--card);border:1px solid var(--line);border-radius:100px;padding:5px 11px;}
+.lg.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+nav.jump{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 11px;scrollbar-width:none;}
 nav.jump::-webkit-scrollbar{display:none;}
 nav.jump a{flex:0 0 auto;font-family:var(--mono);font-size:11px;font-weight:500;
   letter-spacing:.4px;color:var(--ink2);background:var(--card);
   border:1px solid var(--line);border-radius:100px;padding:6px 12px;}
 
-/* ---- support & contact block (top) ---- */
-.support{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:16px;margin:12px 0 0;}
-.support .ota{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
-.support .sh{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:1.5px;
-  color:var(--amber);text-transform:uppercase;margin-bottom:6px;}
-.support .hrs{font-size:15px;font-weight:600;margin-bottom:13px;}
-.support .hrs b{font-family:var(--mono);font-weight:700;letter-spacing:.5px;}
-.msgs{display:flex;flex-direction:column;gap:8px;}
-.mchip{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
-  background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;}
-.mchip .badge{flex:0 0 auto;width:32px;height:32px;border-radius:9px;color:#fff;
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-weight:700;font-size:8.5px;letter-spacing:.2px;}
-.mchip .badge.line{background:#06C755;}
-.mchip .badge.wechat{background:#07C160;}
-.mchip .txt{flex:1;line-height:1.25;}
-.mchip .txt .k{display:block;font-size:11px;color:var(--muted);}
-.mchip .txt .v{display:block;font-weight:700;font-size:15px;}
-.mchip .act{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;color:var(--night);
-  background:var(--night-soft);border-radius:100px;padding:4px 9px;white-space:nowrap;}
-.support .note{margin:13px 0 0;}
-
 /* ---- sections ---- */
-section{padding:30px 20px 8px;scroll-margin-top:56px;}
+section{padding:30px 20px 8px;scroll-margin-top:88px;}
 .sec-k{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:2px;
   color:var(--amber);text-transform:uppercase;}
 .sec-h{font-size:22px;font-weight:700;line-height:1.2;margin:4px 0 16px;letter-spacing:-.2px;}
@@ -138,12 +119,11 @@ ol.steps li b{color:var(--ink);}
 .stopname{background:var(--amber-soft);color:var(--amber);border-radius:5px;
   padding:1px 6px;font-weight:600;white-space:nowrap;}
 
-/* ---- inline note callouts ---- */
+/* ---- notes ---- */
 .note{border-radius:var(--rs);padding:11px 14px;font-size:13.5px;line-height:1.5;
   margin:12px 0;border:1px solid var(--line);background:var(--card);}
 .note.warm{background:var(--amber-soft);border-color:#E7D9AE;color:#7A5E14;}
 .note.info{background:var(--night-soft);border-color:#CFDBF3;color:#2C3F7A;}
-.note.stop{background:var(--warn-soft);border-color:#EFCFC5;color:#8F3323;}
 .note b{font-weight:700;}
 
 /* ---- address / taxi card ---- */
@@ -167,6 +147,7 @@ ol.steps li b{color:var(--ink);}
 .facts .f .ic{flex:0 0 22px;font-size:17px;line-height:1.4;text-align:center;}
 .facts .f .bd{flex:1;}
 .facts .f .t{font-weight:700;font-size:14.5px;margin-bottom:1px;}
+.facts .f .t .subn{font-weight:500;color:var(--muted);font-size:12px;}
 .facts .f .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
 .facts .f .d b{color:var(--ink);}
 .facts .f.warn{background:var(--warn-soft);}
@@ -183,32 +164,42 @@ ol.steps li b{color:var(--ink);}
 .spots .s .t{font-weight:700;font-size:14.5px;}
 .spots .s .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
 
-/* ---- contact ---- */
-.contact{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:18px;margin:12px 0;}
+/* ---- support & contact ---- */
+.support{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;margin:12px 0 0;}
+.support .hrs{font-size:15px;font-weight:600;margin-bottom:13px;}
+.support .hrs b{font-family:var(--mono);font-weight:700;letter-spacing:.5px;}
+.support .ota{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);
+  font-size:13.5px;color:var(--ink2);line-height:1.5;}
+.support .ota b{color:var(--ink);}
+.msgs{display:flex;flex-direction:column;gap:8px;}
 .wa-btn{display:flex;align-items:center;justify-content:center;gap:10px;
   background:var(--wa);color:#fff;border-radius:12px;padding:14px 15px;
   font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.3px;}
 .wa-btn svg{flex:0 0 auto;}
+.wa-btn>span{white-space:nowrap;}
 .wa-btn .num{font-weight:500;font-size:13px;opacity:.92;}
-.ids{display:flex;gap:9px;margin:14px 0 4px;}
-.ids .id{flex:1;text-align:center;background:var(--paper);border:1px solid var(--line);
-  border-radius:10px;padding:11px 8px;}
-.ids .id .k{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);}
-.ids .id .v{font-weight:700;font-size:15px;margin-top:2px;}
-.ota{font-size:13.5px;color:var(--ink2);margin-top:8px;line-height:1.5;}
+.mchip{display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;}
+.mchip .badge{flex:0 0 auto;width:32px;height:32px;border-radius:9px;color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:8.5px;letter-spacing:.2px;}
+.mchip .badge.line{background:#06C755;}
+.mchip .badge.wechat{background:#07C160;}
+.mchip .txt{flex:1;line-height:1.25;}
+.mchip .txt .k{display:block;font-size:11px;color:var(--muted);}
+.mchip .txt .v{display:block;font-weight:700;font-size:15px;}
+.mchip .act{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;color:var(--night);
+  background:var(--night-soft);border-radius:100px;padding:4px 9px;white-space:nowrap;}
 
 /* ---- footer ---- */
 footer{padding:26px 20px 40px;text-align:center;color:var(--muted);
   font-size:11.5px;border-top:1px solid var(--line);margin-top:22px;}
 footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-size:12px;}
 
-/* ---- video (vertical Shorts) ---- */
-.video-slot{margin:12px auto;border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);
-  max-width:300px;}
-.video-slot .vlabel{font-family:var(--mono);font-size:11px;letter-spacing:.5px;
-  color:var(--ink2);padding:10px 12px;background:var(--card);}
-.video-slot .vframe{position:relative;padding-top:177.78%;background:#000;} /* 9:16 vertical */
+/* video CSS kept for future re-add of the walking Shorts (R2jEc-ogdWU) */
+.video-slot{margin:12px auto;border-radius:var(--rs);overflow:hidden;border:1px solid var(--line);max-width:300px;}
+.video-slot .vframe{position:relative;padding-top:177.78%;background:#000;}
 .video-slot .vframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
 </style>
 
@@ -217,78 +208,82 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
   <!-- ═══════════ 1. WELCOME ═══════════ -->
   <header class="hero">
     <div class="brandmark">Paradise Walk Residence</div>
-    <h1>Welcome —<br>your arrival guide</h1>
-    <p class="sub">A self check-in residence right by Incheon Airport Terminal 1. Everything you need for a smooth arrival is on this page.</p>
+    <h1 data-i18n="hero.h1">Welcome —<br>your arrival guide</h1>
+    <p class="sub" data-i18n="hero.sub">A self check-in residence right by Incheon Airport Terminal 1. Everything you need for a smooth arrival is on this page.</p>
   </header>
 
-  <nav class="jump">
-    <a href="#shuttle">🚌 Free Shuttle</a>
-    <a href="#building">📍 The Building</a>
-    <a href="#stay">🏠 Your Stay</a>
-    <a href="#around">🗺️ Around</a>
-    <a href="#contact">💬 Contact</a>
-  </nav>
+  <div class="topbar">
+    <div class="langs">
+      <button type="button" class="lg" data-lang="en">EN</button>
+      <button type="button" class="lg" data-lang="ko">한국어</button>
+      <button type="button" class="lg" data-lang="ja">日本語</button>
+      <button type="button" class="lg" data-lang="zh">中文</button>
+    </div>
+    <nav class="jump">
+      <a href="#shuttle" data-i18n="nav.shuttle">🚌 Free Shuttle</a>
+      <a href="#building" data-i18n="nav.building">📍 The Building</a>
+      <a href="#stay" data-i18n="nav.stay">🏠 Your Stay</a>
+      <a href="#around" data-i18n="nav.around">🗺️ Around</a>
+      <a href="#contact" data-i18n="nav.contact">💬 Contact</a>
+    </nav>
+  </div>
 
   <!-- ═══════════ 2. GETTING HERE ═══════════ -->
   <section id="shuttle">
-    <div class="sec-k">Getting Here</div>
-    <div class="sec-h">Free Airport Shuttle 🚌</div>
-    <p class="lead">A free circulation bus connects the airport to our building. Pick your terminal below.</p>
+    <div class="sec-k" data-i18n="shuttle.k">Getting Here</div>
+    <div class="sec-h" data-i18n="shuttle.h">Free Airport Shuttle 🚌</div>
+    <p class="lead" data-i18n="shuttle.lead">A free circulation bus connects the airport to our building. Pick your terminal below.</p>
 
     <div class="photo map">
       <img src="../assets/images/Map-shuttle-overview.jpeg" alt="Shuttle route overview map" loading="lazy" decoding="async">
-      <div class="cap">SHUTTLE ROUTE OVERVIEW</div>
+      <div class="cap" data-i18n="cap.overview">SHUTTLE ROUTE OVERVIEW</div>
     </div>
-
-    <!-- [v1.1 #2] T1 / T2 unified after-alight narrative; only the stop differs -->
-    <div class="route">
-      <div class="rt"><span class="pill">FROM T1</span> Terminal 1 → PWR</div>
-      <ol class="steps">
-        <li>Go to <b>3F (Departures)</b>, <b>Gate 3 or 12</b>.</li>
-        <li>Take circulation <b>Bus No.03</b> (bound for AICC).</li>
-        <li>Get off at the <b>1st stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
-        <li>Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
-      </ol>
-    </div>
-    <div class="note warm">🧳 Walking from T1 is possible (~15 min), but not recommended with luggage.</div>
 
     <div class="route">
-      <div class="rt"><span class="pill">FROM T2</span> Terminal 2 → PWR</div>
+      <div class="rt"><span class="pill" data-i18n="pill.t1">FROM T1</span> <span data-i18n="rt.t1">Terminal 1 → PWR</span></div>
       <ol class="steps">
-        <li>Go to <b>3F</b>, <b>Gate 7</b>.</li>
-        <li>Take the same <b>Bus No.03</b>.</li>
-        <li>Get off at the <b>4th stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
-        <li>Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
+        <li data-i18n="s.t1.1">Go to <b>3F (Departures)</b>, <b>Gate 3 or 12</b>.</li>
+        <li data-i18n="s.t1.2">Take circulation <b>Bus No.03</b> (bound for AICC).</li>
+        <li data-i18n="s.t1.3">Get off at the <b>1st stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
+        <li data-i18n="s.walkcross">Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
+      </ol>
+    </div>
+    <div class="note warm" data-i18n="note.walk">🧳 Walking from T1 is possible (~15 min), but not recommended with luggage.</div>
+
+    <div class="route">
+      <div class="rt"><span class="pill" data-i18n="pill.t2">FROM T2</span> <span data-i18n="rt.t2">Terminal 2 → PWR</span></div>
+      <ol class="steps">
+        <li data-i18n="s.t2.1">Go to <b>3F</b>, <b>Gate 7</b>.</li>
+        <li data-i18n="s.t2.2">Take the same <b>Bus No.03</b>.</li>
+        <li data-i18n="s.t2.3">Get off at the <b>4th stop</b> — <span class="stopname">Grand Hyatt Hotel</span>.</li>
+        <li data-i18n="s.walkcross">Walk a little in the bus's direction, reach the crosswalk, and cross — <b>our building is right in front of you</b>.</li>
       </ol>
     </div>
 
-    <!-- [v1.1 #2] "이 건물이 보이면 도착" recognition photo -->
     <div class="photo">
       <img src="../assets/images/Building.jpg" alt="Our building — when you see it, you've arrived" loading="lazy" decoding="async">
-      <div class="cap">WHEN YOU SEE THIS BUILDING, YOU'VE ARRIVED</div>
+      <div class="cap" data-i18n="cap.recognize">WHEN YOU SEE THIS BUILDING, YOU'VE ARRIVED</div>
     </div>
 
-    <!-- [v1.3] Walking video removed for now (Shorts R2jEc-ogdWU). To restore: re-add a
-         <div class="video-slot"> with the YouTube embed here. CSS for .video-slot is kept. -->
+    <!-- [v1.3] Walking video removed for now (Shorts R2jEc-ogdWU); .video-slot CSS kept for re-add. -->
 
     <div class="route">
-      <div class="rt depart"><span class="pill">TO AIRPORT</span> PWR → Terminal (T1/T2)</div>
+      <div class="rt depart"><span class="pill" data-i18n="pill.air">TO AIRPORT</span> <span data-i18n="rt.air">PWR → Terminal (T1/T2)</span></div>
       <ol class="steps">
-        <li>Exit the main entrance and cross toward the <b>Incheon Airport Corporation</b> building.</li>
-        <li>Walk right to the nearest bus stop.</li>
-        <li>Take <b>Bus No.04</b>.</li>
-        <li><b>T1</b> ~5 min (2 stops) · <b>T2</b> ~25 min (4 stops).</li>
+        <li data-i18n="s.air.1">Exit the main entrance and cross toward the <b>Incheon Airport Corporation</b> building.</li>
+        <li data-i18n="s.air.2">Walk right to the nearest bus stop.</li>
+        <li data-i18n="s.air.3">Take <b>Bus No.04</b>.</li>
+        <li data-i18n="s.air.4"><b>T1</b> ~5 min (2 stops) · <b>T2</b> ~25 min (4 stops).</li>
       </ol>
     </div>
 
     <div class="photo map">
       <img src="../assets/images/map-to-airport.png" alt="Walking map from the building to the airport-bound bus stop" loading="lazy" decoding="async">
-      <div class="cap">TO THE AIRPORT-BOUND STOP — THE STOP ON THE RIGHT (INT'L BUSINESS CENTER); ITS TIMETABLE IS BELOW ↓</div>
+      <div class="cap" data-i18n="cap.toairstop">TO THE AIRPORT-BOUND STOP — THE STOP ON THE RIGHT (INT'L BUSINESS CENTER); ITS TIMETABLE IS BELOW ↓</div>
     </div>
 
-    <!-- [v1.2 #6] Bus 04 timetable — clean table transcribed from bus04-timetable.jpg (words "hour"/"minute" dropped) -->
     <div class="tt">
-      <div class="tt-h">🕒 Bus No.04 — from "Int'l Business Center" stop</div>
+      <div class="tt-h" data-i18n="tt.head">🕒 Bus No.04 — from "Int'l Business Center" stop</div>
       <table>
         <tr><th>05</th><td>01 · 13 · 25 · 36 · 49</td></tr>
         <tr><th>06</th><td>01 · 16 · 29 · 43 · 56</td></tr>
@@ -299,194 +294,396 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
         <tr><th>11</th><td>02 · 19 · 36 · 53</td></tr>
         <tr><th>12</th><td>08 · 25 · 42 · 59</td></tr>
       </table>
-      <div class="tt-note">Each row is an hour; numbers are the minutes past that hour (covers 05:00–12:59).</div>
+      <div class="tt-note" data-i18n="tt.note">Each row is an hour; numbers are the minutes past that hour (covers 05:00–12:59).</div>
     </div>
   </section>
 
-  <!-- ═══════════ [v1.1 #3 + #4] BY TAXI — moved right below the shuttle section ═══════════ -->
+  <!-- ═══════════ BY TAXI ═══════════ -->
   <section aria-label="By taxi">
-    <div class="sec-k">By Taxi</div>
-    <div class="sec-h">Taking a taxi? 🚕</div>
-    <p class="lead">Show this to your driver:</p>
+    <div class="sec-k" data-i18n="taxi.k">By Taxi</div>
+    <div class="sec-h" data-i18n="taxi.h">Taking a taxi? 🚕</div>
+    <p class="lead" data-i18n="taxi.lead">Show this to your driver:</p>
 
     <div class="addr">
-      <div class="lbl">기사님께 보여주세요 · Show your driver</div>
+      <div class="lbl" data-i18n="addr.lbl">Show this to your driver</div>
+      <!-- Korean address & drop-off stay Korean in every language (the driver reads them). -->
       <div class="kr">인천광역시 중구 공항로424번길 50, IBC월드게이트</div>
       <div class="drop">— 월드게이트 정문 앞 횡단보도에서 내려주세요, 감사합니다!</div>
       <div class="en">IBC World Gate, 50 Gonghang-ro 424beon-gil, Jung-gu, Incheon</div>
       <div class="row">
-        <button class="abtn" type="button" data-copy="인천광역시 중구 공항로424번길 50, IBC월드게이트 — 월드게이트 정문 앞 횡단보도에서 내려주세요, 감사합니다!">⧉ Copy</button>
-        <a class="abtn maps" href="https://maps.app.goo.gl/3HosXsDa21Eti5Zo6" target="_blank" rel="noopener">Open in Google Maps ↗</a>
+        <button class="abtn" type="button" data-copy="인천광역시 중구 공항로424번길 50, IBC월드게이트 — 월드게이트 정문 앞 횡단보도에서 내려주세요, 감사합니다!" data-i18n="addr.copy">⧉ Copy</button>
+        <a class="abtn maps" href="https://maps.app.goo.gl/3HosXsDa21Eti5Zo6" target="_blank" rel="noopener" data-i18n="addr.maps">Open in Google Maps ↗</a>
       </div>
     </div>
   </section>
 
   <!-- ═══════════ 3. FINDING THE BUILDING ═══════════ -->
   <section id="building">
-    <div class="sec-k">Finding the Building</div>
-    <div class="sec-h">You've arrived 📍</div>
-    <p class="lead">Recognize the building from these photos, then head straight up by elevator.</p>
+    <div class="sec-k" data-i18n="bld.k">Finding the Building</div>
+    <div class="sec-h" data-i18n="bld.h">You've arrived 📍</div>
+    <p class="lead" data-i18n="bld.lead">Recognize the building from these photos, then head straight up by elevator.</p>
 
     <div class="photo">
       <img src="../assets/images/Building.jpg" alt="Building exterior" loading="lazy" decoding="async">
-      <div class="cap">THE BUILDING — EXTERIOR</div>
+      <div class="cap" data-i18n="cap.exterior">THE BUILDING — EXTERIOR</div>
     </div>
     <div class="gallery">
       <div class="photo">
         <img src="../assets/images/Building-main-entrance.jpeg" alt="Main entrance" loading="lazy" decoding="async">
-        <div class="cap">MAIN ENTRANCE</div>
+        <div class="cap" data-i18n="cap.entrance">MAIN ENTRANCE</div>
       </div>
       <div class="photo">
         <img src="../assets/images/building-main-lobby.jpg" alt="Main lobby" loading="lazy" decoding="async">
-        <div class="cap">LOBBY</div>
+        <div class="cap" data-i18n="cap.lobby">LOBBY</div>
       </div>
     </div>
     <div class="photo">
       <img src="../assets/images/Elevator-1st-floor-01.jpeg" alt="Elevators on the 1st floor" loading="lazy" decoding="async">
-      <div class="cap">ELEVATORS — 1ST FLOOR</div>
+      <div class="cap" data-i18n="cap.elevator">ELEVATORS — 1ST FLOOR</div>
     </div>
 
-    <!-- [v1.1 #6] door-code delivery path -->
-    <div class="note info">🔑 This is an <b>unmanned residence</b> — there is no front desk. For your privacy and safety, your <b>room number &amp; door code</b> are sent via your <b>booking platform's message</b> on arrival day, so you can go straight up by elevator.</div>
+    <div class="note info" data-i18n="bld.note">🔑 This is an <b>unmanned residence</b> — there is no front desk. For your privacy and safety, your <b>room number & door code</b> are sent via your <b>booking platform's message</b> on arrival day, so you can go straight up by elevator.</div>
   </section>
 
   <!-- ═══════════ 4. YOUR STAY ═══════════ -->
   <section id="stay">
-    <div class="sec-k">Your Stay</div>
-    <div class="sec-h">In your room 🏠</div>
+    <div class="sec-k" data-i18n="stay.k">Your Stay</div>
+    <div class="sec-h" data-i18n="stay.h">In your room 🏠</div>
 
-    <!-- [v1.1 #7] check-in / check-out on separate rows; ETA line removed -->
     <div class="facts">
       <div class="f ok"><div class="ic">🕒</div><div class="bd">
-        <div class="t">Check-in</div>
-        <div class="d">From <b>3:00 PM</b>.</div>
+        <div class="t" data-i18n="checkin.t">Check-in</div>
+        <div class="d" data-i18n="checkin.d">From <b>3:00 PM</b>.</div>
       </div></div>
       <div class="f warn"><div class="ic">🕚</div><div class="bd">
-        <div class="t">Check-out</div>
-        <div class="d">By <b>11:00 AM</b>.</div>
+        <div class="t" data-i18n="checkout.t">Check-out</div>
+        <div class="d" data-i18n="checkout.d">By <b>11:00 AM</b>.</div>
       </div></div>
-      <!-- [v1.1 #8] Wi-Fi sticker location -->
       <div class="f"><div class="ic">📶</div><div class="bd">
         <div class="t">Wi-Fi</div>
-        <div class="d">Wi-Fi details are on a sticker at the <b>end of the TV cabinet</b> — the drawer unit the TV sits on.</div>
+        <div class="d" data-i18n="wifi.d">Wi-Fi details are on a sticker at the <b>end of the TV cabinet</b> — the drawer unit the TV sits on.</div>
       </div></div>
       <div class="f"><div class="ic">🌡️</div><div class="bd">
-        <div class="t">Heating &amp; Cooling</div>
-        <div class="d">Fan-coil system — the control panel is <b>next to the bathroom door</b>.</div>
+        <div class="t" data-i18n="hvac.t">Heating &amp; Cooling</div>
+        <div class="d" data-i18n="hvac.d">Fan-coil system — the control panel is <b>next to the bathroom door</b>.</div>
       </div></div>
     </div>
 
-    <!-- [v1.2 #8] Notice — all items unified to the same row layout; colors kept; reordered -->
-    <h3>Notice</h3>
+    <h3 data-i18n="notice.h">Notice</h3>
     <div class="facts">
       <div class="f"><div class="ic">🧳</div><div class="bd">
-        <div class="t">Luggage</div>
-        <div class="d">No luggage storage before check-in or after check-out (there is no on-site office).</div>
+        <div class="t" data-i18n="lug.t">Luggage</div>
+        <div class="d" data-i18n="lug.d">No luggage storage before check-in or after check-out (there is no on-site office).</div>
       </div></div>
       <div class="f"><div class="ic">🅿️</div><div class="bd">
-        <div class="t">Parking</div>
-        <div class="d">Paid parking <b>inside the building only</b>: first 20 min <b>₩1,000</b>, then <b>₩1,000 per 30 min</b>, daily max <b>₩50,000</b>. We can't offer free parking due to strict airport-area regulations.</div>
+        <div class="t" data-i18n="park.t">Parking</div>
+        <div class="d" data-i18n="park.d">Paid parking <b>inside the building only</b>: first 20 min <b>₩1,000</b>, then <b>₩1,000 per 30 min</b>, daily max <b>₩50,000</b>. We can't offer free parking due to strict airport-area regulations.</div>
       </div></div>
       <div class="f warn"><div class="ic">🚭</div><div class="bd">
-        <div class="t">Strictly non-smoking</div>
-        <div class="d">A special cleaning fee applies if violated.</div>
+        <div class="t" data-i18n="smoke.t">Strictly non-smoking</div>
+        <div class="d" data-i18n="smoke.d">A special cleaning fee applies if violated.</div>
       </div></div>
       <div class="f warn"><div class="ic">👥</div><div class="bd">
-        <div class="t">Max 2 guests</div>
-        <div class="d">Per room.</div>
+        <div class="t" data-i18n="max2.t">Max 2 guests</div>
+        <div class="d" data-i18n="max2.d">Per room.</div>
       </div></div>
       <div class="f warn"><div class="ic">🐾</div><div class="bd">
-        <div class="t">No pets</div>
-        <div class="d">Pets are not allowed.</div>
+        <div class="t" data-i18n="pets.t">No pets</div>
+        <div class="d" data-i18n="pets.d">Pets are not allowed.</div>
       </div></div>
       <div class="f warn"><div class="ic">🔇</div><div class="bd">
-        <div class="t">No parties / noise</div>
-        <div class="d">Grounds for immediate eviction.</div>
+        <div class="t" data-i18n="party.t">No parties / noise</div>
+        <div class="d" data-i18n="party.d">Grounds for immediate eviction.</div>
       </div></div>
       <div class="f"><div class="ic">🗑️</div><div class="bd">
-        <div class="t">Trash <span style="font-weight:500;color:var(--muted);font-size:12px;">(stays of 7+ days)</span></div>
-        <div class="d">Recyclables → box by the door · General waste → bin in the kitchen · Food waste → bin under the sink. Disposal area is <b>outside the building's back door</b>.</div>
+        <div class="t" data-i18n="trash.t">Trash <span class="subn">(stays of 7+ days)</span></div>
+        <div class="d" data-i18n="trash.d">Recyclables → box by the door · General waste → bin in the kitchen · Food waste → bin under the sink. Disposal area is <b>outside the building's back door</b>.</div>
       </div></div>
       <div class="f ok"><div class="ic">🚪</div><div class="bd">
-        <div class="t">Don't open the door to unannounced visitors</div>
-        <div class="d">Our team never visits without notice.</div>
+        <div class="t" data-i18n="door.t">Don't open the door to unannounced visitors</div>
+        <div class="d" data-i18n="door.d">Our team never visits without notice.</div>
       </div></div>
     </div>
   </section>
 
   <!-- ═══════════ 5. AROUND THE BUILDING ═══════════ -->
   <section id="around">
-    <div class="sec-k">Around the Building</div>
-    <div class="sec-h">The neighborhood 🗺️</div>
+    <div class="sec-k" data-i18n="around.k">Around the Building</div>
+    <div class="sec-h" data-i18n="around.h">The neighborhood 🗺️</div>
 
     <div class="spots">
       <div class="s"><div class="ic">💊</div><div class="bd">
-        <div class="t">Pharmacy &amp; clinic</div>
-        <div class="d">On <b>B1 of the LG Eclat building</b> — about a 2-minute walk.</div>
+        <div class="t" data-i18n="pharm.t">Pharmacy &amp; clinic</div>
+        <div class="d" data-i18n="pharm.d">On <b>B1 of the LG Eclat building</b> — about a 2-minute walk.</div>
       </div></div>
       <div class="s"><div class="ic">🏪</div><div class="bd">
-        <div class="t">Convenience stores</div>
-        <div class="d"><b>Emart24</b> (World Gate, 1F), plus <b>7-Eleven</b> and <b>CU</b> nearby.</div>
+        <div class="t" data-i18n="conv.t">Convenience stores</div>
+        <div class="d" data-i18n="conv.d"><b>Emart24</b> (World Gate, 1F), plus <b>7-Eleven</b> and <b>CU</b> nearby.</div>
       </div></div>
       <div class="s"><div class="ic">🛒</div><div class="bd">
-        <div class="t">Groceries delivered</div>
-        <div class="d">Order from <b>Lotte Mart Unseo</b> online for same- or next-day delivery to the address above.</div>
+        <div class="t" data-i18n="groc.t">Groceries delivered</div>
+        <div class="d" data-i18n="groc.d">Order from <b>Lotte Mart Unseo</b> online for same- or next-day delivery to the address above.</div>
       </div></div>
       <div class="s"><div class="ic">🍽️</div><div class="bd">
-        <div class="t">Eat &amp; coffee nearby</div>
-        <div class="d"><b>Mamanim</b> — Korean, in the LG Eclat building · a <b>café on the 1st floor</b> of World Gate · <b>Mega Coffee</b> in the next building.</div>
+        <div class="t" data-i18n="eat.t">Eat &amp; coffee nearby</div>
+        <div class="d" data-i18n="eat.d"><b>Mamanim</b> — Korean, in the LG Eclat building · a <b>café on the 1st floor</b> of World Gate · <b>Mega Coffee</b> in the next building.</div>
       </div></div>
     </div>
   </section>
 
   <!-- ═══════════ 6. SUPPORT & CONTACT (unified) ═══════════ -->
   <section id="contact">
-    <div class="sec-k">Support &amp; Contact</div>
-    <div class="sec-h">We're here to help 💬</div>
+    <div class="sec-k" data-i18n="contact.k">Support &amp; Contact</div>
+    <div class="sec-h" data-i18n="contact.h">We're here to help 💬</div>
 
     <div class="support">
-      <div class="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
-    <div class="msgs">
-      <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
-        <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
-      </a>
-      <button class="mchip" type="button" data-copy="pwresi">
-        <span class="badge line">LINE</span>
-        <span class="txt"><span class="k">LINE ID</span><span class="v">pwresi</span></span>
-        <span class="act">Tap to copy</span>
-      </button>
-      <button class="mchip" type="button" data-copy="pwresi">
-        <span class="badge wechat">WeChat</span>
-        <span class="txt"><span class="k">WeChat ID</span><span class="v">pwresi</span></span>
-        <span class="act">Tap to copy</span>
-      </button>
-    </div>
-      <div class="note info">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
-      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
+      <div class="hrs" data-i18n="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
+      <div class="msgs">
+        <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
+          <span data-i18n="wa">WhatsApp us</span><span class="num">+82 10-8227-2845</span>
+        </a>
+        <button class="mchip" type="button" data-copy="pwresi">
+          <span class="badge line">LINE</span>
+          <span class="txt"><span class="k">LINE ID</span><span class="v">pwresi</span></span>
+          <span class="act" data-i18n="copy.tap">Tap to copy</span>
+        </button>
+        <button class="mchip" type="button" data-copy="pwresi">
+          <span class="badge wechat">WeChat</span>
+          <span class="txt"><span class="k">WeChat ID</span><span class="v">pwresi</span></span>
+          <span class="act" data-i18n="copy.tap">Tap to copy</span>
+        </button>
+      </div>
+      <div class="note info" data-i18n="note.delay">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
+      <div class="ota" data-i18n="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
     </div>
   </section>
 
   <footer>
     <div class="fm">PARADISE WALK RESIDENCE</div>
-    <div style="margin-top:6px;">Self check-in residence · Incheon Airport</div>
+    <div style="margin-top:6px;" data-i18n="foot.tag">Self check-in residence · Incheon Airport</div>
   </footer>
 
 </div>
 
 <script>
-  (function(){
-    // Tap-to-copy for any [data-copy] element (taxi address, LINE/WeChat IDs)
-    document.querySelectorAll('[data-copy]').forEach(function(el){
-      el.addEventListener('click', function(){
-        var val = el.getAttribute('data-copy');
-        var fb = el.querySelector('.act') || el;
-        var orig = fb.textContent;
-        var show = function(){ fb.textContent = 'Copied ✓'; setTimeout(function(){ fb.textContent = orig; }, 1500); };
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(val).then(show).catch(show);
-        } else { show(); }
-      });
+(function(){
+  // ── translation dictionary (EN is the in-DOM baseline; KO/JA/ZH here) ──
+  var I18N = {
+    ko: {
+      "hero.h1": `환영합니다 —<br>도착 안내`,
+      "hero.sub": `인천공항 제1터미널 바로 옆의 셀프 체크인 레지던스입니다. 순조로운 도착에 필요한 모든 정보가 이 페이지에 있습니다.`,
+      "nav.shuttle": `🚌 무료 셔틀`, "nav.building": `📍 건물 찾기`, "nav.stay": `🏠 숙박 안내`, "nav.around": `🗺️ 주변`, "nav.contact": `💬 연락`,
+      "shuttle.k": `오시는 길`, "shuttle.h": `무료 공항 셔틀 🚌`,
+      "shuttle.lead": `공항과 건물을 잇는 무료 순환버스가 있습니다. 아래에서 터미널을 선택하세요.`,
+      "cap.overview": `셔틀 경로 개요`,
+      "pill.t1": `T1에서`, "rt.t1": `터미널 1 → PWR`,
+      "s.t1.1": `<b>3F(출국장)</b>의 <b>3번 또는 12번 게이트</b>로 가세요.`,
+      "s.t1.2": `순환 <b>03번 버스</b>(AICC 방면)를 타세요.`,
+      "s.t1.3": `<b>첫 번째 정류장</b>에서 내리세요 — <span class="stopname">Grand Hyatt Hotel</span>.`,
+      "s.walkcross": `버스 진행 방향으로 조금 걸어가 횡단보도를 건너면 — <b>바로 앞에 저희 건물이 있습니다</b>.`,
+      "note.walk": `🧳 T1에서 도보(약 15분)도 가능하지만, 짐이 있으면 권장하지 않습니다.`,
+      "pill.t2": `T2에서`, "rt.t2": `터미널 2 → PWR`,
+      "s.t2.1": `<b>3F</b>의 <b>7번 게이트</b>로 가세요.`,
+      "s.t2.2": `동일한 <b>03번 버스</b>를 타세요.`,
+      "s.t2.3": `<b>네 번째 정류장</b>에서 내리세요 — <span class="stopname">Grand Hyatt Hotel</span>.`,
+      "cap.recognize": `이 건물이 보이면 도착입니다`,
+      "pill.air": `공항으로`, "rt.air": `PWR → 터미널 (T1/T2)`,
+      "s.air.1": `정문으로 나와 <b>인천국제공항공사</b> 건물 쪽으로 길을 건너세요.`,
+      "s.air.2": `오른쪽으로 걸어 가장 가까운 정류장으로 가세요.`,
+      "s.air.3": `<b>04번 버스</b>를 타세요.`,
+      "s.air.4": `<b>T1</b> 약 5분(2정거장) · <b>T2</b> 약 25분(4정거장).`,
+      "cap.toairstop": `공항행 정류장 — 지도 오른쪽 정류장(Int'l Business Center). 시간표는 아래에 있습니다 ↓`,
+      "tt.head": `🕒 04번 버스 — "Int'l Business Center" 정류장 출발`,
+      "tt.note": `각 행은 '시', 숫자는 그 시의 '분'입니다 (05:00–12:59 구간).`,
+      "taxi.k": `택시 이용`, "taxi.h": `택시를 타시나요? 🚕`, "taxi.lead": `기사님께 이 화면을 보여주세요:`,
+      "addr.lbl": `기사님께 보여주세요`, "addr.copy": `⧉ 복사`, "addr.maps": `구글 지도에서 열기 ↗`,
+      "bld.k": `건물 찾기`, "bld.h": `도착하셨습니다 📍`,
+      "bld.lead": `아래 사진으로 건물을 확인한 뒤, 엘리베이터로 바로 올라오세요.`,
+      "cap.exterior": `건물 외관`, "cap.entrance": `정문`, "cap.lobby": `로비`, "cap.elevator": `엘리베이터 — 1층`,
+      "bld.note": `🔑 <b>무인 레지던스</b>로 프런트가 없습니다. 개인정보 보호와 안전을 위해 <b>객실 번호와 도어록 비밀번호</b>는 도착 당일 <b>예약하신 플랫폼의 메시지</b>로 보내드립니다. 엘리베이터로 바로 올라오시면 됩니다.`,
+      "stay.k": `숙박 안내`, "stay.h": `객실 안내 🏠`,
+      "checkin.t": `체크인`, "checkin.d": `<b>오후 3:00</b>부터.`,
+      "checkout.t": `체크아웃`, "checkout.d": `<b>오전 11:00</b>까지.`,
+      "wifi.d": `Wi-Fi 정보는 <b>TV 서랍장 끝</b>에 붙은 스티커에 있습니다 — TV가 놓인 서랍장입니다.`,
+      "hvac.t": `냉난방`, "hvac.d": `팬코일 방식이며, 조절 패널은 <b>욕실 문 옆</b>에 있습니다.`,
+      "notice.h": `안내 사항`,
+      "lug.t": `짐 보관`, "lug.d": `체크인 전·체크아웃 후 짐 보관은 불가합니다 (현장 사무실이 없습니다).`,
+      "park.t": `주차`, "park.d": `<b>건물 내 유료 주차만</b> 가능합니다: 최초 20분 <b>₩1,000</b>, 이후 30분당 <b>₩1,000</b>, 1일 최대 <b>₩50,000</b>. 공항 인근 규정이 엄격해 무료 주차는 제공하지 못합니다.`,
+      "smoke.t": `전면 금연`, "smoke.d": `위반 시 특별 청소비가 부과됩니다.`,
+      "max2.t": `최대 2인`, "max2.d": `객실당 인원입니다.`,
+      "pets.t": `반려동물 불가`, "pets.d": `반려동물은 입실할 수 없습니다.`,
+      "party.t": `파티·소음 금지`, "party.d": `적발 시 즉시 퇴실 사유가 됩니다.`,
+      "trash.t": `쓰레기 <span class="subn">(7일 이상 숙박 시)</span>`,
+      "trash.d": `재활용 → 문 옆 상자 · 일반 쓰레기 → 주방 쓰레기통 · 음식물 → 싱크대 아래 통. 배출 장소는 <b>건물 뒷문 밖</b>입니다.`,
+      "door.t": `예고 없는 방문자에게 문을 열지 마세요`, "door.d": `저희 팀은 사전 안내 없이 방문하지 않습니다.`,
+      "around.k": `건물 주변`, "around.h": `주변 안내 🗺️`,
+      "pharm.t": `약국·병원`, "pharm.d": `<b>LG Eclat 건물 지하 1층</b>에 있습니다 — 도보 약 2분.`,
+      "conv.t": `편의점`, "conv.d": `<b>Emart24</b>(World Gate 1층), 그리고 인근에 <b>7-Eleven</b>·<b>CU</b>가 있습니다.`,
+      "groc.t": `장보기 배달`, "groc.d": `<b>롯데마트 운서점</b> 온라인으로 주문하면 위 주소로 당일·익일 배송됩니다.`,
+      "eat.t": `주변 식당·카페`, "eat.d": `<b>마마님</b> — 한식, LG Eclat 건물 · World Gate <b>1층 카페</b> · 옆 건물 <b>메가커피</b>.`,
+      "contact.k": `지원·연락처`, "contact.h": `무엇이든 도와드릴게요 💬`,
+      "hrs": `🕘 운영 시간 <b>09:00–21:00 (KST)</b>`, "wa": `WhatsApp으로 연락`, "copy.tap": `탭하여 복사`,
+      "note.delay": `<b>09:00–21:00 (KST)</b> 외 시간에 보내신 메시지는 답장이 다소 늦을 수 있습니다 — 양해 부탁드립니다.`,
+      "ota": `또는 <b>예약하신 플랫폼</b>의 메시지로 답장 주셔도 됩니다 — Booking.com, Agoda, Expedia.`,
+      "foot.tag": `셀프 체크인 레지던스 · 인천공항`
+    },
+    ja: {
+      "hero.h1": `ようこそ —<br>ご到着ガイド`,
+      "hero.sub": `仁川空港第1ターミナルすぐそばのセルフチェックイン・レジデンスです。スムーズなご到着に必要な情報をこのページにまとめました。`,
+      "nav.shuttle": `🚌 無料シャトル`, "nav.building": `📍 建物`, "nav.stay": `🏠 ご滞在`, "nav.around": `🗺️ 周辺`, "nav.contact": `💬 連絡先`,
+      "shuttle.k": `アクセス`, "shuttle.h": `無料空港シャトル 🚌`,
+      "shuttle.lead": `空港と建物を結ぶ無料の循環バスがあります。下でターミナルをお選びください。`,
+      "cap.overview": `シャトル経路の概要`,
+      "pill.t1": `T1から`, "rt.t1": `第1ターミナル → PWR`,
+      "s.t1.1": `<b>3F（出発フロア）</b>の<b>3番または12番ゲート</b>へ。`,
+      "s.t1.2": `循環<b>03番バス</b>（AICC方面）に乗車。`,
+      "s.t1.3": `<b>1つ目の停留所</b>で下車 — <span class="stopname">Grand Hyatt Hotel</span>。`,
+      "s.walkcross": `バスの進行方向へ少し歩き、横断歩道を渡ると — <b>目の前が当施設です</b>。`,
+      "note.walk": `🧳 T1から徒歩（約15分）も可能ですが、お荷物が多い場合はおすすめしません。`,
+      "pill.t2": `T2から`, "rt.t2": `第2ターミナル → PWR`,
+      "s.t2.1": `<b>3F</b>の<b>7番ゲート</b>へ。`,
+      "s.t2.2": `同じ<b>03番バス</b>に乗車。`,
+      "s.t2.3": `<b>4つ目の停留所</b>で下車 — <span class="stopname">Grand Hyatt Hotel</span>。`,
+      "cap.recognize": `この建物が見えたら到着です`,
+      "pill.air": `空港へ`, "rt.air": `PWR → ターミナル (T1/T2)`,
+      "s.air.1": `正面玄関を出て、<b>仁川国際空港公社</b>の建物へ向かって横断してください。`,
+      "s.air.2": `右へ歩き、最寄りのバス停へ。`,
+      "s.air.3": `<b>04番バス</b>に乗車。`,
+      "s.air.4": `<b>T1</b> 約5分（2停留所）· <b>T2</b> 約25分（4停留所）。`,
+      "cap.toairstop": `空港行きの停留所 — 地図右側の停留所（Int'l Business Center）。時刻表は下にあります ↓`,
+      "tt.head": `🕒 04番バス — 「Int'l Business Center」停留所発`,
+      "tt.note": `各行が「時」、数字がその時の「分」です（05:00–12:59の区間）。`,
+      "taxi.k": `タクシー`, "taxi.h": `タクシーをご利用ですか？🚕`, "taxi.lead": `運転手にこの画面をお見せください：`,
+      "addr.lbl": `運転手にお見せください`, "addr.copy": `⧉ コピー`, "addr.maps": `Googleマップで開く ↗`,
+      "bld.k": `建物を探す`, "bld.h": `到着です 📍`,
+      "bld.lead": `下の写真で建物を確認し、エレベーターでそのままお上がりください。`,
+      "cap.exterior": `建物の外観`, "cap.entrance": `正面玄関`, "cap.lobby": `ロビー`, "cap.elevator": `エレベーター — 1階`,
+      "bld.note": `🔑 <b>無人レジデンス</b>のためフロントはありません。プライバシーと安全のため、<b>部屋番号とドアコード</b>はご到着当日に<b>ご予約プラットフォームのメッセージ</b>でお送りします。そのままエレベーターでお上がりください。`,
+      "stay.k": `ご滞在について`, "stay.h": `お部屋について 🏠`,
+      "checkin.t": `チェックイン`, "checkin.d": `<b>15:00</b>から。`,
+      "checkout.t": `チェックアウト`, "checkout.d": `<b>11:00</b>まで。`,
+      "wifi.d": `Wi-Fi情報は<b>テレビ台の端</b>に貼られたシールに記載されています（テレビが載っている引き出し付きの台）。`,
+      "hvac.t": `冷暖房`, "hvac.d": `ファンコイル方式です。操作パネルは<b>浴室のドア横</b>にあります。`,
+      "notice.h": `ご注意`,
+      "lug.t": `お荷物`, "lug.d": `チェックイン前・チェックアウト後のお荷物のお預かりはできません（現地オフィスはございません）。`,
+      "park.t": `駐車場`, "park.d": `駐車は<b>建物内の有料駐車場のみ</b>：最初の20分 <b>₩1,000</b>、以降30分ごと <b>₩1,000</b>、1日最大 <b>₩50,000</b>。空港周辺の規制が厳しく、無料駐車はご提供できません。`,
+      "smoke.t": `全面禁煙`, "smoke.d": `違反された場合は特別清掃料を申し受けます。`,
+      "max2.t": `最大2名`, "max2.d": `1部屋あたりの人数です。`,
+      "pets.t": `ペット不可`, "pets.d": `ペットの入室はできません。`,
+      "party.t": `パーティー・騒音禁止`, "party.d": `違反は即時退去の対象となります。`,
+      "trash.t": `ゴミ <span class="subn">（7泊以上のご滞在の場合）</span>`,
+      "trash.d": `リサイクル → ドア横の箱 · 一般ごみ → キッチンのゴミ箱 · 生ごみ → シンク下の容器。排出場所は<b>建物裏口の外</b>です。`,
+      "door.t": `予告のない訪問者にはドアを開けないでください`, "door.d": `当施設のスタッフが予告なく訪問することはありません。`,
+      "around.k": `周辺のご案内`, "around.h": `近隣スポット 🗺️`,
+      "pharm.t": `薬局・クリニック`, "pharm.d": `<b>LG Eclatビルの地下1階</b>にあります — 徒歩約2分。`,
+      "conv.t": `コンビニ`, "conv.d": `<b>Emart24</b>（World Gate 1階）、近くに<b>7-Eleven</b>・<b>CU</b>もあります。`,
+      "groc.t": `食料品のデリバリー`, "groc.d": `<b>ロッテマート雲西店</b>のオンラインで注文すると、上記住所へ当日・翌日配送されます。`,
+      "eat.t": `近くの飲食・カフェ`, "eat.d": `<b>Mamanim</b> — 韓国料理、LG Eclatビル内 · World Gate<b>1階のカフェ</b> · 隣のビルの<b>Mega Coffee</b>。`,
+      "contact.k": `サポート・連絡先`, "contact.h": `お気軽にご連絡ください 💬`,
+      "hrs": `🕘 対応時間 <b>09:00–21:00（KST）</b>`, "wa": `WhatsAppで連絡`, "copy.tap": `タップでコピー`,
+      "note.delay": `<b>09:00–21:00（KST）</b>以外にいただいたメッセージは、返信が遅れる場合があります — ご了承ください。`,
+      "ota": `または<b>ご予約プラットフォーム</b>のメッセージからご返信いただいても構いません — Booking.com、Agoda、Expedia。`,
+      "foot.tag": `セルフチェックイン・レジデンス · 仁川空港`
+    },
+    zh: {
+      "hero.h1": `欢迎 —<br>入住指南`,
+      "hero.sub": `位于仁川机场1号航站楼旁的自助入住公寓。顺利抵达所需的全部信息都在本页。`,
+      "nav.shuttle": `🚌 免费班车`, "nav.building": `📍 建筑物`, "nav.stay": `🏠 入住须知`, "nav.around": `🗺️ 周边`, "nav.contact": `💬 联系`,
+      "shuttle.k": `如何抵达`, "shuttle.h": `免费机场班车 🚌`,
+      "shuttle.lead": `有免费循环巴士往返机场与本楼。请在下方选择您的航站楼。`,
+      "cap.overview": `班车路线概览`,
+      "pill.t1": `从T1`, "rt.t1": `1号航站楼 → PWR`,
+      "s.t1.1": `前往<b>3层(出发层)</b>的<b>3号或12号门</b>。`,
+      "s.t1.2": `乘坐循环<b>03路巴士</b>（开往AICC）。`,
+      "s.t1.3": `在<b>第1站</b>下车 — <span class="stopname">Grand Hyatt Hotel</span>。`,
+      "s.walkcross": `沿巴士行进方向走一小段，过人行横道 — <b>本楼就在正前方</b>。`,
+      "note.walk": `🧳 从T1步行(约15分钟)也可以，但携带行李时不建议。`,
+      "pill.t2": `从T2`, "rt.t2": `2号航站楼 → PWR`,
+      "s.t2.1": `前往<b>3层</b>的<b>7号门</b>。`,
+      "s.t2.2": `乘坐同一趟<b>03路巴士</b>。`,
+      "s.t2.3": `在<b>第4站</b>下车 — <span class="stopname">Grand Hyatt Hotel</span>。`,
+      "cap.recognize": `看到这栋建筑就到了`,
+      "pill.air": `前往机场`, "rt.air": `PWR → 航站楼 (T1/T2)`,
+      "s.air.1": `从正门出来，朝<b>仁川国际机场公社</b>大楼方向过马路。`,
+      "s.air.2": `向右步行至最近的巴士站。`,
+      "s.air.3": `乘坐<b>04路巴士</b>。`,
+      "s.air.4": `<b>T1</b> 约5分钟(2站) · <b>T2</b> 约25分钟(4站)。`,
+      "cap.toairstop": `前往机场的巴士站 — 地图右侧的车站（Int'l Business Center）；时刻表见下方 ↓`,
+      "tt.head": `🕒 04路巴士 — 从"Int'l Business Center"站发车`,
+      "tt.note": `每行代表"小时"，数字为该小时的"分钟"（涵盖05:00–12:59）。`,
+      "taxi.k": `乘坐出租车`, "taxi.h": `要乘出租车吗？🚕`, "taxi.lead": `请把此屏幕给司机看：`,
+      "addr.lbl": `请给司机看`, "addr.copy": `⧉ 复制`, "addr.maps": `在Google地图中打开 ↗`,
+      "bld.k": `找到建筑物`, "bld.h": `您已抵达 📍`,
+      "bld.lead": `请对照下方照片认准建筑物，然后乘电梯直接上楼。`,
+      "cap.exterior": `建筑外观`, "cap.entrance": `正门`, "cap.lobby": `大堂`, "cap.elevator": `电梯 — 1层`,
+      "bld.note": `🔑 本处为<b>无人值守公寓</b>，没有前台。为保护您的隐私与安全，<b>房间号与门锁密码</b>将于抵达当天通过<b>您预订平台的消息</b>发送。您可乘电梯直接上楼。`,
+      "stay.k": `入住须知`, "stay.h": `客房内 🏠`,
+      "checkin.t": `入住`, "checkin.d": `<b>下午3:00</b>起。`,
+      "checkout.t": `退房`, "checkout.d": `<b>上午11:00</b>前。`,
+      "wifi.d": `Wi-Fi信息在<b>电视柜一端</b>的贴纸上 — 即电视所在的抽屉柜。`,
+      "hvac.t": `空调/暖气`, "hvac.d": `为风机盘管系统，控制面板在<b>浴室门旁</b>。`,
+      "notice.h": `注意事项`,
+      "lug.t": `行李`, "lug.d": `入住前及退房后不提供行李寄存（现场无办公室）。`,
+      "park.t": `停车`, "park.d": `仅提供<b>楼内付费停车</b>：前20分钟<b>₩1,000</b>，之后每30分钟<b>₩1,000</b>，每日最高<b>₩50,000</b>。因机场周边规定严格，无法提供免费停车。`,
+      "smoke.t": `严禁吸烟`, "smoke.d": `违反将收取额外清洁费。`,
+      "max2.t": `最多2人`, "max2.d": `每间客房。`,
+      "pets.t": `禁止携带宠物`, "pets.d": `不允许携带宠物入住。`,
+      "party.t": `禁止聚会/喧哗`, "party.d": `违反将被立即要求离店。`,
+      "trash.t": `垃圾 <span class="subn">(入住7天及以上)</span>`,
+      "trash.d": `可回收 → 门旁箱子 · 一般垃圾 → 厨房垃圾桶 · 厨余 → 水槽下方桶。投放处在<b>楼后门外</b>。`,
+      "door.t": `请勿为未经预约的访客开门`, "door.d": `我们的团队绝不会无预约上门。`,
+      "around.k": `建筑周边`, "around.h": `周边一带 🗺️`,
+      "pharm.t": `药店与诊所`, "pharm.d": `位于<b>LG Eclat大楼地下1层</b> — 步行约2分钟。`,
+      "conv.t": `便利店`, "conv.d": `<b>Emart24</b>（World Gate 1层），附近还有<b>7-Eleven</b>和<b>CU</b>。`,
+      "groc.t": `生鲜配送`, "groc.d": `在<b>乐天玛特云西店</b>网上下单，可当日或次日送至上述地址。`,
+      "eat.t": `周边餐饮与咖啡`, "eat.d": `<b>Mamanim</b> — 韩餐，位于LG Eclat大楼 · World Gate<b>1层咖啡厅</b> · 隔壁楼的<b>Mega Coffee</b>。`,
+      "contact.k": `支持与联系`, "contact.h": `我们随时为您服务 💬`,
+      "hrs": `🕘 服务时间 <b>09:00–21:00（KST）</b>`, "wa": `通过WhatsApp联系`, "copy.tap": `点按复制`,
+      "note.delay": `在<b>09:00–21:00（KST）</b>之外发送的消息回复可能稍有延迟 — 敬请谅解。`,
+      "ota": `或直接在<b>您的预订平台</b>消息中回复 — Booking.com、Agoda 或 Expedia。`,
+      "foot.tag": `自助入住公寓 · 仁川机场`
+    }
+  };
+  var COPIED = { en:'Copied ✓', ko:'복사됨 ✓', ja:'コピーしました ✓', zh:'已复制 ✓' };
+  var LANGS = ['en','ko','ja','zh'];
+
+  var nodes = document.querySelectorAll('[data-i18n]');
+  var base = {};
+  nodes.forEach(function(el){ base[el.getAttribute('data-i18n')] = el.innerHTML; });
+  var cur = 'en';
+
+  function apply(lang){
+    cur = lang;
+    nodes.forEach(function(el){
+      var k = el.getAttribute('data-i18n');
+      var dict = I18N[lang];
+      el.innerHTML = (lang === 'en' || !dict || dict[k] == null) ? base[k] : dict[k];
     });
-  })();
+    document.documentElement.lang = lang;
+    var btns = document.querySelectorAll('.lg');
+    for (var i=0;i<btns.length;i++){ btns[i].classList.toggle('active', btns[i].getAttribute('data-lang') === lang); }
+    try { localStorage.setItem('pwr_lang', lang); } catch(e){}
+  }
+
+  var btns = document.querySelectorAll('.lg');
+  for (var i=0;i<btns.length;i++){
+    (function(b){ b.addEventListener('click', function(){ apply(b.getAttribute('data-lang')); }); })(btns[i]);
+  }
+
+  var saved = null; try { saved = localStorage.getItem('pwr_lang'); } catch(e){}
+  apply(saved && LANGS.indexOf(saved) >= 0 ? saved : 'en');
+
+  // tap-to-copy (taxi address, LINE/WeChat IDs); transient label localized to current language
+  document.querySelectorAll('[data-copy]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var val = el.getAttribute('data-copy');
+      var fb = el.querySelector('.act') || el;
+      var orig = fb.textContent;
+      var show = function(){ fb.textContent = COPIED[cur] || COPIED.en; setTimeout(function(){ fb.textContent = orig; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(val).then(show).catch(show); }
+      else { show(); }
+    });
+  });
+})();
 </script>
