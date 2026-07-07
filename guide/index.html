@@ -50,7 +50,7 @@ button{font-family:inherit;cursor:pointer;}
   font-size:13px;color:var(--amber);text-transform:uppercase;}
 .hero h1{font-family:var(--mono);font-weight:700;font-size:27px;line-height:1.15;
   letter-spacing:.5px;margin:6px 0 10px;}
-.hero .sub{color:var(--ink2);font-size:14.5px;max-width:34ch;}
+.hero .sub{color:var(--ink2);font-size:14.5px;text-align:left;}
 
 /* ---- quick nav ---- */
 nav.jump{position:sticky;top:0;z-index:5;display:flex;gap:8px;overflow-x:auto;
@@ -103,12 +103,26 @@ h3{font-size:15.5px;font-weight:700;margin:22px 0 9px;}
 .gallery .photo{margin:0;}
 .gallery .photo img{height:135px;}
 
+/* ---- clean timetable ---- */
+.tt{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin:12px 0;}
+.tt .tt-h{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.4px;
+  color:var(--night);padding:12px 14px;background:var(--night-soft);}
+.tt table{width:100%;border-collapse:collapse;}
+.tt th{width:46px;text-align:center;font-family:var(--mono);font-weight:700;font-size:16px;
+  color:var(--ink);background:var(--paper2);border-top:1px solid var(--line);padding:11px 0;vertical-align:middle;}
+.tt td{border-top:1px solid var(--line);padding:11px 13px;font-family:var(--mono);
+  font-size:14px;letter-spacing:.3px;color:var(--ink2);line-height:1.55;}
+.tt .tt-note{font-size:11.5px;color:var(--muted);padding:9px 14px;
+  border-top:1px solid var(--line);line-height:1.45;}
+
 /* ---- route steps ---- */
 .route{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   padding:16px 16px 6px;margin:12px 0;}
 .route .rt{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.5px;
-  color:var(--night);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
-.route .rt .pill{background:var(--night-soft);color:var(--night);border-radius:6px;
+  color:#fff;background:var(--night);border-radius:10px;padding:10px 12px;
+  margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.route .rt.depart{background:var(--warn);}
+.route .rt .pill{background:rgba(255,255,255,.22);color:#fff;border-radius:6px;
   font-size:10px;padding:2px 7px;letter-spacing:1px;}
 ol.steps{list-style:none;counter-reset:s;}
 ol.steps li{counter-increment:s;position:relative;padding:0 0 14px 34px;
@@ -135,7 +149,7 @@ ol.steps li b{color:var(--ink);}
 .addr{background:var(--ink);color:#fff;border-radius:var(--r);padding:18px 18px 16px;margin:14px 0;}
 .addr .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;
   color:#B9C0C7;text-transform:uppercase;margin-bottom:10px;}
-.addr .kr{font-size:19px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
+.addr .kr{font-size:15px;font-weight:700;line-height:1.4;letter-spacing:-.2px;}
 .addr .drop{font-size:15.5px;font-weight:600;line-height:1.5;margin-top:9px;color:#F1DDA6;}
 .addr .en{font-size:13px;color:#C7CDD3;margin-top:10px;line-height:1.45;}
 .addr .row{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
@@ -154,13 +168,12 @@ ol.steps li b{color:var(--ink);}
 .facts .f .t{font-weight:700;font-size:14.5px;margin-bottom:1px;}
 .facts .f .d{font-size:13.5px;color:var(--ink2);line-height:1.5;}
 .facts .f .d b{color:var(--ink);}
-
-/* ---- rules grid ---- */
-.rules{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
-.rules .r{background:var(--warn-soft);border:1px solid #EFCFC5;border-radius:10px;
-  padding:10px 12px;font-size:13px;color:#8F3323;line-height:1.4;}
-.rules .r b{display:block;font-weight:700;margin-bottom:1px;}
-.rules .r.ok{background:var(--go-soft);border-color:#BFE0CF;color:#155E43;}
+.facts .f.warn{background:var(--warn-soft);}
+.facts .f.warn .t,.facts .f.warn .d{color:#8F3323;}
+.facts .f.warn .d b{color:#7A2A1C;}
+.facts .f.ok{background:var(--go-soft);}
+.facts .f.ok .t,.facts .f.ok .d{color:#155E43;}
+.facts .f.ok .d b{color:#0F4A34;}
 
 /* ---- around list ---- */
 .spots .s{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);}
@@ -215,29 +228,6 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     <a href="#contact">💬 Contact</a>
   </nav>
 
-  <!-- [v1.1 #1] Support hours + messenger contacts + delayed-reply note, together -->
-  <div class="support">
-    <div class="sh">Support &amp; Contact</div>
-    <div class="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
-    <div class="msgs">
-      <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
-        <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
-      </a>
-      <button class="mchip" type="button" data-copy="pwresi">
-        <span class="badge line">LINE</span>
-        <span class="txt"><span class="k">LINE ID</span><span class="v">pwresi</span></span>
-        <span class="act">Tap to copy</span>
-      </button>
-      <button class="mchip" type="button" data-copy="pwresi">
-        <span class="badge wechat">WeChat</span>
-        <span class="txt"><span class="k">WeChat ID</span><span class="v">pwresi</span></span>
-        <span class="act">Tap to copy</span>
-      </button>
-    </div>
-    <div class="note info">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
-  </div>
-
   <!-- ═══════════ 2. GETTING HERE ═══════════ -->
   <section id="shuttle">
     <div class="sec-k">Getting Here</div>
@@ -251,7 +241,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
     <!-- [v1.1 #2] T1 / T2 unified after-alight narrative; only the stop differs -->
     <div class="route">
-      <div class="rt"><span class="pill">FROM T1</span> Terminal 1 → Us</div>
+      <div class="rt"><span class="pill">FROM T1</span> Terminal 1 → PWR</div>
       <ol class="steps">
         <li>Go to <b>3F (Departures)</b>, <b>Gate 3 or 12</b>.</li>
         <li>Take circulation <b>Bus No.03</b> (bound for AICC).</li>
@@ -262,7 +252,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     <div class="note warm">🧳 Walking from T1 is possible (~15 min), but not recommended with luggage.</div>
 
     <div class="route">
-      <div class="rt"><span class="pill">FROM T2</span> Terminal 2 → Us</div>
+      <div class="rt"><span class="pill">FROM T2</span> Terminal 2 → PWR</div>
       <ol class="steps">
         <li>Go to <b>3F</b>, <b>Gate 7</b>.</li>
         <li>Take the same <b>Bus No.03</b>.</li>
@@ -287,7 +277,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     </div>
 
     <div class="route">
-      <div class="rt"><span class="pill">TO AIRPORT</span> Us → Terminal</div>
+      <div class="rt depart"><span class="pill">TO AIRPORT</span> PWR → Terminal (T1/T2)</div>
       <ol class="steps">
         <li>Exit the main entrance and cross toward the <b>Incheon Airport Corporation</b> building.</li>
         <li>Walk right to the nearest bus stop.</li>
@@ -298,13 +288,23 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
 
     <div class="photo map">
       <img src="../assets/images/map-to-airport.png" alt="Walking map from the building to the airport-bound bus stop" loading="lazy" decoding="async">
-      <div class="cap">TO THE AIRPORT-BOUND STOP</div>
+      <div class="cap">TO THE AIRPORT-BOUND STOP — THE STOP ON THE RIGHT (INT'L BUSINESS CENTER); ITS TIMETABLE IS BELOW ↓</div>
     </div>
 
-    <!-- [v1.1 #5 + #11] Bus 04 timetable as image (Bus 03 link removed) -->
-    <div class="photo map">
-      <img src="../assets/images/bus04-timetable.jpg" alt="Bus No.04 timetable from the Int'l Business Center stop" loading="lazy" decoding="async">
-      <div class="cap">TIMETABLE — FROM "INT'L BUSINESS CENTER" STOP (THE STOP ON THE RIGHT SIDE OF THE MAP)</div>
+    <!-- [v1.2 #6] Bus 04 timetable — clean table transcribed from bus04-timetable.jpg (words "hour"/"minute" dropped) -->
+    <div class="tt">
+      <div class="tt-h">🕒 Bus No.04 — from "Int'l Business Center" stop</div>
+      <table>
+        <tr><th>05</th><td>01 · 13 · 25 · 36 · 49</td></tr>
+        <tr><th>06</th><td>01 · 16 · 29 · 43 · 56</td></tr>
+        <tr><th>07</th><td>11 · 26 · 41 · 51</td></tr>
+        <tr><th>08</th><td>01 · 11 · 24 · 36 · 47 · 56</td></tr>
+        <tr><th>09</th><td>06 · 16 · 26 · 41 · 54</td></tr>
+        <tr><th>10</th><td>11 · 28 · 45</td></tr>
+        <tr><th>11</th><td>02 · 19 · 36 · 53</td></tr>
+        <tr><th>12</th><td>08 · 25 · 42 · 59</td></tr>
+      </table>
+      <div class="tt-note">Each row is an hour; numbers are the minutes past that hour (covers 05:00–12:59).</div>
     </div>
   </section>
 
@@ -381,7 +381,7 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
       </div></div>
     </div>
 
-    <!-- [v1.1 #9] Notice — Luggage / Parking / Trash grouped here + house rules -->
+    <!-- [v1.2 #8] Notice — all items unified to the same row layout; colors kept; reordered -->
     <h3>Notice</h3>
     <div class="facts">
       <div class="f"><div class="ic">🧳</div><div class="bd">
@@ -392,18 +392,30 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
         <div class="t">Parking</div>
         <div class="d">Paid parking <b>inside the building only</b>: first 20 min <b>₩1,000</b>, then <b>₩1,000 per 30 min</b>, daily max <b>₩50,000</b>. We can't offer free parking due to strict airport-area regulations.</div>
       </div></div>
+      <div class="f warn"><div class="ic">🚭</div><div class="bd">
+        <div class="t">Strictly non-smoking</div>
+        <div class="d">A special cleaning fee applies if violated.</div>
+      </div></div>
+      <div class="f warn"><div class="ic">👥</div><div class="bd">
+        <div class="t">Max 2 guests</div>
+        <div class="d">Per room.</div>
+      </div></div>
+      <div class="f warn"><div class="ic">🐾</div><div class="bd">
+        <div class="t">No pets</div>
+        <div class="d">Pets are not allowed.</div>
+      </div></div>
+      <div class="f warn"><div class="ic">🔇</div><div class="bd">
+        <div class="t">No parties / noise</div>
+        <div class="d">Grounds for immediate eviction.</div>
+      </div></div>
       <div class="f"><div class="ic">🗑️</div><div class="bd">
         <div class="t">Trash <span style="font-weight:500;color:var(--muted);font-size:12px;">(stays of 7+ days)</span></div>
         <div class="d">Recyclables → box by the door · General waste → bin in the kitchen · Food waste → bin under the sink. Disposal area is <b>outside the building's back door</b>.</div>
       </div></div>
-    </div>
-
-    <div class="rules">
-      <div class="r"><b>🚭 Strictly non-smoking</b>A special cleaning fee applies if violated.</div>
-      <div class="r"><b>👥 Max 2 guests</b>Per room.</div>
-      <div class="r"><b>🐾 No pets</b></div>
-      <div class="r"><b>🔇 No parties / noise</b>Grounds for immediate eviction.</div>
-      <div class="r ok" style="grid-column:1 / -1;"><b>🚪 Don't open the door to unannounced visitors</b>Our team never visits without notice.</div>
+      <div class="f ok"><div class="ic">🚪</div><div class="bd">
+        <div class="t">Don't open the door to unannounced visitors</div>
+        <div class="d">Our team never visits without notice.</div>
+      </div></div>
     </div>
   </section>
 
@@ -438,17 +450,32 @@ footer .fm{font-family:var(--mono);letter-spacing:2px;color:var(--ink2);font-siz
     <div class="sec-h">We're here to help 💬</div>
 
     <div class="contact">
+      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
+    </div>
+  </section>
+
+  <!-- [v1.2 #2] Support hours + messenger contacts — moved to the bottom -->
+  <div class="support">
+    <div class="sh">Support &amp; Contact</div>
+    <div class="hrs">🕘 Hours <b>09:00–21:00 KST</b></div>
+    <div class="msgs">
       <a class="wa-btn" href="https://wa.me/821082272845" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.943c0 2.096.549 4.14 1.595 5.945L0 24l6.335-1.652a11.9 11.9 0 005.71 1.454h.006c6.585 0 11.946-5.359 11.949-11.945a11.86 11.86 0 00-3.48-8.418z"/></svg>
         <span>WhatsApp us</span><span class="num">+82 10-8227-2845</span>
       </a>
-      <div class="ids">
-        <div class="id"><div class="k">LINE ID</div><div class="v">pwresi</div></div>
-        <div class="id"><div class="k">WeChat ID</div><div class="v">pwresi</div></div>
-      </div>
-      <div class="ota">Or simply reply in your <b>booking platform</b> message thread — Booking.com, Agoda, or Expedia.</div>
+      <button class="mchip" type="button" data-copy="pwresi">
+        <span class="badge line">LINE</span>
+        <span class="txt"><span class="k">LINE ID</span><span class="v">pwresi</span></span>
+        <span class="act">Tap to copy</span>
+      </button>
+      <button class="mchip" type="button" data-copy="pwresi">
+        <span class="badge wechat">WeChat</span>
+        <span class="txt"><span class="k">WeChat ID</span><span class="v">pwresi</span></span>
+        <span class="act">Tap to copy</span>
+      </button>
     </div>
-  </section>
+    <div class="note info">Messages sent outside <b>09:00–21:00 KST</b> may get a slightly delayed reply — thank you for your patience.</div>
+  </div>
 
   <footer>
     <div class="fm">PARADISE WALK RESIDENCE</div>
