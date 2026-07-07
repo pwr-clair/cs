@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PWR CS DESK — 목업 v0.3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root{
+  --paper:#F7F5F0;      /* PWR 아이보리 */
+  --card:#FFFFFF;
+  --ink:#232E38;
+  --ink2:#5D6771;
+  --muted:#93938B;
+  --line:#E5E1D7;
+  --board:#141A21;      /* 전광판만 어둡게 — 시그니처 */
+  --board-line:#2A323C;
+  --board-ink:#ECE8DF;
+  --go:#177A54;
+  --go-soft:#E2F1E9;
+  --night:#33509E;
+  --night-soft:#E7ECF8;
+  --warn:#BC4430;
+  --warn-soft:#F9E9E4;
+  --amber:#96731C;
+  --amber-soft:#F5EEDA;
+  --r:14px; --rs:9px;
+  --mono:'Space Grotesk','Pretendard Variable',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--paper);color:var(--ink);font-family:'Pretendard Variable',Pretendard,sans-serif;font-size:14px;line-height:1.55;}
+button{font-family:inherit;}
+.wrap{max-width:430px;margin:0 auto;padding:14px 12px 44px;}
+
+/* ── 전광판 (유일한 다크 요소) ── */
+.board{background:var(--board);border-radius:var(--r);padding:13px 14px 11px;margin-bottom:12px;position:relative;overflow:hidden;color:var(--board-ink);}
+.board::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.14) 3px 4px);pointer-events:none;}
+.b-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;position:relative;z-index:1;}
+.b-title{font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:2.5px;}
+.b-title em{font-style:normal;color:#5BD59B;}
+.mock-tag{font-family:var(--mono);font-size:8.5px;color:#F08A76;letter-spacing:1px;margin-left:6px;}
+.b-clock{font-family:var(--mono);font-size:13px;color:#9AA2AB;letter-spacing:1px;}
+.b-clock b{color:var(--board-ink);font-weight:500;}
+.b-row{display:flex;gap:6px;position:relative;z-index:1;}
+.tile{flex:1;background:#0D1218;border:1px solid var(--board-line);border-radius:var(--rs);padding:7px 4px 6px;text-align:center;}
+.tile .n{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1.1;}
+.tile .l{font-size:9px;color:#7C848D;letter-spacing:1.5px;margin-top:2px;}
+.tile.t-wait .n{color:#E8B54D;}
+.tile.t-task .n{color:#F08A76;}
+.tile.t-sugg .n{color:#8AA3E8;}
+.tile.t-rate .n{color:#5BD59B;}
+
+/* 자동응대 바 */
+.autobar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:9px 13px;margin-bottom:14px;}
+.autobar .txt{font-size:11.5px;color:var(--ink2);}
+.autobar .txt b{color:var(--ink);font-weight:600;}
+.autobar .win{font-family:var(--mono);font-size:10px;color:var(--night);background:var(--night-soft);border-radius:5px;padding:1px 7px;letter-spacing:.5px;}
+.sw{position:relative;flex-shrink:0;width:72px;height:30px;border-radius:100px;border:1px solid var(--line);background:var(--paper);cursor:pointer;transition:.25s;}
+.sw .knob{position:absolute;left:3px;top:2.5px;width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;transition:.25s;color:var(--ink2);}
+.sw .lab{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:8.5px;letter-spacing:1px;color:var(--muted);}
+.sw.on{background:var(--night);border-color:var(--night);}
+.sw.on .knob{left:44px;background:#F4E9C8;color:#3A3320;border-color:transparent;}
+.sw.on .lab{left:9px;right:auto;color:#C9D4F0;}
+.sw:focus-visible{outline:2px solid var(--night);outline-offset:2px;}
+
+/* ── 탭 ── */
+.tabs{display:flex;gap:4px;margin-bottom:12px;}
+.tab{flex:1;text-align:center;padding:8px 0;border-radius:var(--rs);border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
+.tab .n{font-family:var(--mono);font-size:10px;margin-left:2px;color:var(--muted);}
+.tab.active{background:var(--ink);border-color:var(--ink);color:#fff;}
+.tab.active .n{color:#B8C0C7;}
+.tab:focus-visible{outline:2px solid var(--go);outline-offset:1px;}
+.pane{display:none;}
+.pane.show{display:block;animation:up .22s;}
+@keyframes up{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
+
+/* ── 카드 ── */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px;margin-bottom:12px;transition:opacity .3s,transform .3s;}
+.card.gone{opacity:0;transform:translateX(34px);}
+.meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
+.ota{font-size:9px;font-weight:700;border-radius:100px;padding:1.5px 7px;color:#fff;}
+.ota.booking{background:#003580;} .ota.agoda{background:#CC0000;} .ota.expedia{background:#FFD700;color:#7A6000;} .ota.direct{background:#F97316;}
+.guest{font-weight:700;font-size:14.5px;}
+.lang{font-family:var(--mono);font-size:9px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink2);}
+.time{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-left:auto;}
+.stayline{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink2);margin-bottom:10px;}
+.stayline .rm{color:var(--ink);font-weight:500;}
+.stayline .badge{font-family:'Pretendard Variable',sans-serif;font-size:9px;font-weight:700;color:var(--amber);background:var(--amber-soft);border-radius:100px;padding:1px 7px;}
+.stayline .badge.in{color:var(--go);background:var(--go-soft);}
+
+.msg{border-left:3px solid var(--line);padding:2px 0 2px 10px;margin-bottom:11px;}
+.msg .who{font-size:9px;color:var(--muted);letter-spacing:.5px;margin-bottom:2px;}
+.msg .body{font-size:13px;}
+
+.draft{background:var(--paper);border-radius:var(--rs);padding:10px 12px;margin-bottom:9px;}
+.draft .who{font-size:9.5px;color:var(--ink2);margin-bottom:5px;}
+.draft .who b{color:var(--go);}
+.draft .who .caution{color:var(--amber);font-weight:700;}
+.reply{font-size:13px;white-space:pre-line;}
+.gloss{font-size:11px;color:var(--muted);white-space:pre-line;margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
+.gloss::before{content:'KO 대역';display:block;font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:3px;}
+.disclaim{font-size:10px;color:var(--amber);background:var(--amber-soft);border-radius:6px;padding:4px 8px;margin-top:8px;}
+textarea.editbox{width:100%;border:1px solid var(--night);border-radius:var(--rs);padding:9px 10px;font-family:inherit;font-size:13px;background:#fff;color:var(--ink);min-height:92px;display:none;margin-bottom:9px;}
+
+.conf{display:flex;align-items:center;gap:7px;margin-bottom:11px;flex-wrap:wrap;}
+.conf .lbl{font-size:9.5px;color:var(--ink2);}
+.conf .dots{display:flex;gap:3px;}
+.conf .d{width:15px;height:4px;border-radius:100px;background:var(--line);}
+.conf .d.f{background:var(--go);}
+.conf.low .d.f{background:var(--amber);}
+.conf .note{font-size:9px;color:var(--amber);}
+
+.btns{display:flex;gap:7px;}
+.b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
+.b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
+.b.skip{color:var(--muted);}
+.b:active{transform:scale(.98);}
+.b:focus-visible{outline:2px solid var(--go);outline-offset:1px;}
+
+/* 업무 */
+.task{display:flex;gap:10px;align-items:flex-start;}
+.task .chk{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--muted);background:#fff;cursor:pointer;flex-shrink:0;margin-top:2px;position:relative;}
+.task .chk.done{background:var(--go);border-color:var(--go);}
+.task .chk.done::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:700;}
+.task .tt{font-size:13px;font-weight:600;}
+.task.donebody .tt{text-decoration:line-through;color:var(--muted);}
+.task .due{font-family:var(--mono);font-size:10px;margin-top:2px;}
+.due.hot{color:var(--warn);}
+.due.ok{color:var(--ink2);}
+.task .src{font-size:10px;color:var(--muted);margin-top:3px;}
+.task .src b{color:var(--ink2);font-weight:500;}
+.autogen{font-size:8.5px;font-family:var(--mono);letter-spacing:.5px;color:var(--night);background:var(--night-soft);border-radius:4px;padding:1px 6px;vertical-align:2px;margin-left:5px;}
+.addtask{width:100%;padding:10px;border-radius:var(--rs);border:1px dashed var(--line);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;}
+.task-rule{font-size:10px;color:var(--ink2);background:var(--card);border:1px solid var(--line);border-radius:var(--rs);padding:8px 11px;margin-bottom:11px;}
+.task-rule b{color:var(--warn);}
+
+/* 제안/후기 */
+.sugg-type{font-size:9px;font-weight:700;letter-spacing:.4px;border-radius:100px;padding:1.5px 8px;}
+.sugg-type.eta{background:var(--night-soft);color:var(--night);}
+.sugg-type.req{background:var(--warn-soft);color:var(--warn);}
+.sugg-body{font-size:13px;margin-bottom:4px;}
+.sugg-body b{color:var(--night);}
+.sugg-src{font-size:10px;color:var(--muted);margin-bottom:10px;}
+.score{font-family:var(--mono);font-size:10.5px;color:var(--go);}
+.rev-note{font-size:11px;color:var(--ink2);margin-bottom:10px;}
+
+.empty{text-align:center;color:var(--muted);font-size:12px;padding:42px 0 30px;}
+.empty .big{font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--ink2);margin-bottom:5px;}
+
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font-size:12px;font-weight:600;padding:9px 16px;border-radius:100px;opacity:0;pointer-events:none;transition:.3s;white-space:nowrap;z-index:50;}
+#toast.show{opacity:1;transform:translateX(-50%);}
+
+.footnote{font-size:9.5px;color:var(--muted);text-align:center;margin-top:22px;line-height:1.8;}
+.footnote code{font-family:var(--mono);font-size:9px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="board">
+    <div class="b-top">
+      <div class="b-title">PWR <em>CS</em> DESK <span class="mock-tag">MOCK v0.3</span></div>
+      <div class="b-clock"><b id="clk">--:--</b> KST</div>
+    </div>
+    <div class="b-row">
+      <div class="tile t-wait"><div class="n" id="nWait">3</div><div class="l">대기</div></div>
+      <div class="tile t-task"><div class="n" id="nTask">1</div><div class="l">업무</div></div>
+      <div class="tile t-sugg"><div class="n">2</div><div class="l">제안</div></div>
+      <div class="tile t-rate"><div class="n" id="nRate">87%</div><div class="l">무수정 승인</div></div>
+    </div>
+  </div>
+
+  <div class="autobar">
+    <div class="txt" id="autoTxt">자동응대 <b>꺼짐</b> — 전건 승인 <span class="win">야간창 00–08</span></div>
+    <div class="sw" id="autoSw" role="switch" aria-checked="false" tabindex="0" onclick="toggleAuto()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAuto();}">
+      <span class="knob" id="swKnob">☀</span><span class="lab" id="swLab">수동</span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab(0,this)">대기<span class="n" id="tWait">3</span></button>
+    <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">1</span></button>
+    <button class="tab" onclick="showTab(2,this)">제안<span class="n">2</span></button>
+    <button class="tab" onclick="showTab(3,this)">후기<span class="n">1</span></button>
+    <button class="tab" onclick="showTab(4,this)">보냄<span class="n">12</span></button>
+  </div>
+
+  <!-- ══ 대기 ══ -->
+  <div class="pane show" id="p0">
+
+    <div class="card" id="c1">
+      <div class="meta">
+        <span class="ota booking">B.com</span><span class="guest">Åsa</span><span class="lang">EN</span>
+        <span class="time">수신 21:37 (7분 전)</span>
+      </div>
+      <div class="stayline"><span class="rm">1006호</span> · 7/2 → 7/3 · 1박 <span class="badge in">오늘 체크인</span></div>
+      <div class="msg"><div class="who">GUEST</div>
+        <div class="body">Hi! Our flight lands at 8pm, so we'll probably arrive around 9pm. Is late check-in okay? Also, where do we get the key?</div>
+      </div>
+      <div class="draft" id="d1v">
+        <div class="who">초안 · <b>클라라 말투</b> · 유사사례 4건 참조</div>
+        <div class="reply">Hello Åsa, thank you for letting us know!
+Late check-in is no problem at all — check-in is self-service, available anytime after 3pm.
+We'll send your door lock code and a step-by-step guide by email before arrival, so you can go straight to your room. Safe flight! ✈</div>
+        <div class="gloss">안녕하세요 오사 님, 알려주셔서 감사합니다! 늦은 체크인 전혀 문제없어요 — 셀프 체크인이라 오후 3시 이후 언제든 가능합니다. 도착 전에 도어락 비밀번호와 단계별 안내를 이메일로 보내드릴게요. 좋은 비행 되세요!</div>
+      </div>
+      <textarea class="editbox" id="d1e">Hello Åsa, thank you for letting us know! ...</textarea>
+      <div class="conf"><span class="lbl">말투 일치</span><div class="dots"><span class="d f"></span><span class="d f"></span><span class="d f"></span><span class="d f"></span><span class="d"></span></div></div>
+      <div class="btns">
+        <button class="b" onclick="editDraft('d1')">수정</button>
+        <button class="b skip" onclick="skipCard('c1','이미 처리 — 원문은 코퍼스 후보로 보관')">이미 처리</button>
+        <button class="b go" onclick="approveCard('c1',true)">승인 · 발송</button>
+      </div>
+      <div style="font-size:9.5px;color:var(--muted);margin-top:8px;">↳ 도어락 안내는 입실안내 자동발송이 커버 — 업무 생성 안 함 · <b style="color:var(--night);">제안</b>: ETA 21:00 대기</div>
+    </div>
+
+    <div class="card" id="c2">
+      <div class="meta">
+        <span class="ota agoda">Agoda</span><span class="guest">Yuki</span><span class="lang">JA</span>
+        <span class="time">수신 21:32 (12분 전)</span>
+      </div>
+      <div class="stayline"><span class="rm">909호</span> · 7/4 → 7/6 · 2박 <span class="badge">D-2</span></div>
+      <div class="msg"><div class="who">GUEST</div>
+        <div class="body">こんにちは。空港からホテルまでのシャトルバスはありますか？荷物が多いので心配です。</div>
+      </div>
+      <div class="draft" id="d2v">
+        <div class="who">초안 · <b>클라라 말투</b> · 유사사례 9건 참조</div>
+        <div class="reply">Yukiさん、こんにちは！
+はい、建物の目の前から無料の空港シャトルバスがご利用いただけます（第1・第2ターミナル両方）。
+詳しい乗り場のご案内はチェックイン前のリマインダーメールに記載しておりますので、ご不明な点があればいつでもご連絡ください。</div>
+        <div class="gloss">유키 님 안녕하세요! 네, 건물 바로 앞에서 무료 공항 셔틀버스를 이용하실 수 있습니다(T1·T2 모두). 상세 승차 안내는 체크인 전 리마인더 메일에 담겨 있으니, 궁금한 점 있으면 언제든 연락 주세요.</div>
+        <div class="disclaim">✎ 영어 외 언어 — 면책 문구 자동 첨부: 「この返信は翻訳ツールを使用しています。」</div>
+      </div>
+      <textarea class="editbox" id="d2e">Yukiさん、こんにちは！ ...</textarea>
+      <div class="conf"><span class="lbl">말투 일치</span><div class="dots"><span class="d f"></span><span class="d f"></span><span class="d f"></span><span class="d f"></span><span class="d f"></span></div></div>
+      <div class="btns">
+        <button class="b" onclick="editDraft('d2')">수정</button>
+        <button class="b skip" onclick="skipCard('c2','이미 처리로 표시')">이미 처리</button>
+        <button class="b go" onclick="approveCard('c2',true)">승인 · 발송</button>
+      </div>
+      <div style="font-size:9.5px;color:var(--muted);margin-top:8px;">↳ 리마인더 자동발송이 커버하는 내용으로 안내하고 종결 — 업무 생성 안 함</div>
+    </div>
+
+    <div class="card" id="c3">
+      <div class="meta">
+        <span class="ota expedia">Expedia</span><span class="guest">Marco</span><span class="lang">EN</span>
+        <span class="time">수신 21:41 (3분 전)</span>
+      </div>
+      <div class="stayline"><span class="rm">1204호</span> · 6/30 → 7/4 · 4박 <span class="badge in">투숙 중</span></div>
+      <div class="msg"><div class="who">GUEST</div>
+        <div class="body">The payment was charged twice on my card. I want a refund for the duplicate charge immediately or I'll dispute it with my bank.</div>
+      </div>
+      <div class="draft" id="d3v">
+        <div class="who">초안 · <span class="caution">신중 표시</span> · 유사사례 1건 (부족)</div>
+        <div class="reply">Hello Marco, thank you for flagging this — we take billing issues seriously.
+Could you share the last 4 digits of the card and the two charge dates? Payments for this booking are processed by Expedia, so we'll check with them right away and follow up with you today.</div>
+        <div class="gloss">안녕하세요 마르코 님, 알려주셔서 감사합니다 — 결제 문제는 중요하게 다루고 있습니다. 카드 뒷 4자리와 두 건의 결제 일자를 알려주시겠어요? 이 예약의 결제는 익스피디아에서 처리되므로 즉시 확인 후 오늘 중 회신드리겠습니다.</div>
+      </div>
+      <textarea class="editbox" id="d3e">Hello Marco, ...</textarea>
+      <div class="conf low"><span class="lbl">말투 일치</span><div class="dots"><span class="d f"></span><span class="d f"></span><span class="d"></span><span class="d"></span><span class="d"></span></div><span class="note">환불성 · 유사사례 부족 — 신중 표시</span></div>
+      <div class="btns">
+        <button class="b" onclick="editDraft('d3')">수정</button>
+        <button class="b skip" onclick="skipCard('c3','이미 처리로 표시')">이미 처리</button>
+        <button class="b go" onclick="approveCard('c3',true,'발송됨 · 후속 업무 1건 생성 → 업무 탭')">승인 · 발송</button>
+      </div>
+      <div style="font-size:9.5px;color:var(--muted);margin-top:8px;">↳ 승인 시 <b style="color:var(--warn);">업무</b> "익스피디아 이중결제 확인 후 회신 · DUE 오늘" 자동 생성 — 표준 자동화 밖의 약속이라 업무화</div>
+    </div>
+
+    <div class="empty" id="emptyWait" style="display:none;"><div class="big">ALL CLEAR</div>새 메시지가 오면 텔레그램으로 알립니다.</div>
+  </div>
+
+  <!-- ══ 업무 ══ -->
+  <div class="pane" id="p1">
+    <div class="task-rule">업무 생성 원칙: <b>표준 자동발송(입실안내·리마인더 등)이 커버하는 내용은 업무로 만들지 않습니다.</b> 답변에서 새로 약속한 것 — 기존 자동화 밖의 일 — 만 업무가 됩니다.</div>
+    <div class="card task" id="k1">
+      <button class="chk" onclick="doneTask(this,'k1')" aria-label="완료"></button>
+      <div style="flex:1;">
+        <div class="tt">1204호 이중결제 — 익스피디아 확인 후 Marco에게 회신<span class="autogen">자동생성</span></div>
+        <div class="due hot">DUE 오늘 중 — "follow up with you today" 약속</div>
+        <div class="src">출처: <b>Marco</b> 응대 (7/2 21:44 발송분)</div>
+      </div>
+    </div>
+    <button class="addtask" onclick="toast('수동 업무 추가 (목업)')">＋ 업무 직접 추가</button>
+    <div class="footnote"><code>cs/tasks</code> · 마감순 정렬 · 마감 임박 시 텔레그램 리마인드</div>
+  </div>
+
+  <!-- ══ 제안 ══ -->
+  <div class="pane" id="p2">
+    <div class="card" id="s1">
+      <div class="meta"><span class="sugg-type eta">ETA → 체크인시간</span><span class="time">Åsa · 1006호</span></div>
+      <div class="sugg-body">체크인 시간을 <b>21:00</b>으로 반영할까요?</div>
+      <div class="sugg-src">근거: "we'll probably arrive around 9pm" (B.com, 21:37)</div>
+      <div class="btns">
+        <button class="b skip" onclick="skipCard('s1','제안 무시됨')">무시</button>
+        <button class="b go" onclick="approveCard('s1',false,'HK 1006호 체크인시간 반영 (목업)')">HK에 반영</button>
+      </div>
+    </div>
+    <div class="card" id="s2">
+      <div class="meta"><span class="sugg-type req">특별요청 → 특이사항</span><span class="time">Yuki · 909호</span></div>
+      <div class="sugg-body">특이사항에 <b>"짐 많음 · 셔틀 이용 예정"</b> 추가할까요?</div>
+      <div class="sugg-src">근거: "荷物が多いので心配です" (Agoda, 21:32)</div>
+      <div class="btns">
+        <button class="b skip" onclick="skipCard('s2','제안 무시됨')">무시</button>
+        <button class="b go" onclick="approveCard('s2',false,'909호 특이사항 추가 (목업)')">HK에 반영</button>
+      </div>
+    </div>
+    <div class="empty" style="display:none;" id="emptySugg"><div class="big">NO SUGGESTIONS</div></div>
+  </div>
+
+  <!-- ══ 후기 ══ -->
+  <div class="pane" id="p3">
+    <div class="card" id="r1">
+      <div class="meta"><span class="ota booking">B.com</span><span class="guest">Robyn</span><span class="score">감성 +0.92 · 응답 4/4</span><span class="time">어제 체크아웃</span></div>
+      <div class="rev-note">대화 감성 긍정 + 소통 원활 → 후기요청 대상. 발송 시점: 체크아웃 익일 오전.</div>
+      <div class="draft"><div class="who">후기요청 초안 (EN)</div>
+        <div class="reply">Hi Robyn, we hope you had a smooth trip home! It was a pleasure hosting you. If you have a moment, a short review would mean a lot to our small team. 🙏</div>
+        <div class="gloss">로빈 님, 편안히 귀가하셨길 바랍니다! 모시게 되어 즐거웠어요. 잠시 시간이 되시면 짧은 후기 하나가 저희 작은 팀에게 큰 힘이 됩니다.</div>
+      </div>
+      <div class="btns">
+        <button class="b skip" onclick="skipCard('r1','후기요청 건너뜀')">건너뜀</button>
+        <button class="b go" onclick="approveCard('r1',false,'후기요청 발송 (목업)')">발송</button>
+      </div>
+    </div>
+    <div class="empty" style="display:none;" id="emptyRev"><div class="big">NO REVIEW QUEUE</div></div>
+  </div>
+
+  <!-- ══ 보냄 ══ -->
+  <div class="pane" id="p4">
+    <div class="card" style="opacity:.78;">
+      <div class="meta"><span class="ota booking">B.com</span><span class="guest">Sarah</span><span class="lang">EN</span><span class="time">6/29 14:22 · 무수정 승인</span></div>
+      <div class="msg"><div class="who">GUEST</div><div class="body">Is early check-in possible?</div></div>
+      <div class="draft"><div class="who">SENT</div><div class="reply">Hello Sarah! Standard check-in is from 3pm, but if the room is ready earlier we'll let you know by email on the day…</div></div>
+    </div>
+    <div class="card" style="opacity:.78;">
+      <div class="meta"><span class="ota agoda">Agoda</span><span class="guest">manzat</span><span class="lang">EN</span><span class="time">6/28 09:10 · 수정 후 발송</span></div>
+      <div class="msg"><div class="who">GUEST</div><div class="body">Can I store luggage after checkout?</div></div>
+      <div class="draft"><div class="who">SENT · <b style="color:var(--night);">수정본 코퍼스 학습됨</b></div><div class="reply">Hi! We don't have a staffed front desk, but there are coin lockers at T1 (B1F)…</div></div>
+    </div>
+    <div class="footnote">모든 발송은 <code>cs/sent</code> 기록 · 수정 건은 (초안→수정본) 쌍으로 <code>cs/corpus</code> 적재</div>
+  </div>
+
+  <div class="footnote">
+    MOCK v0.3 — 실데이터·Firebase 연결 없음<br>
+    Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱 → Gmail 회신 발송<br>
+    자동응대 ON = 야간창(00–08) 내 <b>전건 즉시 발송</b> · 그 외 시간 승인 큐 — 안전판 재논의는 무수정 승인율 상승 후
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+function tick(){
+  const d=new Date();
+  document.getElementById('clk').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+tick();setInterval(tick,15000);
+
+let auto=false, waitCount=3, taskCount=1, editedSet=new Set();
+function toggleAuto(){
+  auto=!auto;
+  const sw=document.getElementById('autoSw');
+  sw.classList.toggle('on',auto);
+  sw.setAttribute('aria-checked',auto);
+  document.getElementById('swKnob').textContent=auto?'☾':'☀';
+  document.getElementById('swLab').textContent=auto?'자동':'수동';
+  document.getElementById('autoTxt').innerHTML=auto
+    ?'자동응대 <b>켜짐</b> — 야간창 내 전건 즉시 발송 <span class="win">야간창 00–08</span>'
+    :'자동응대 <b>꺼짐</b> — 전건 승인 <span class="win">야간창 00–08</span>';
+  toast(auto?'자동응대 ON — 00–08시 전건 즉시 발송':'자동응대 OFF — 모든 초안을 승인합니다');
+}
+function showTab(i,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.pane').forEach((p,j)=>p.classList.toggle('show',i===j));
+}
+function editDraft(id){
+  const v=document.getElementById(id+'v'), e=document.getElementById(id+'e');
+  const editing=e.style.display==='block';
+  e.style.display=editing?'none':'block';
+  v.style.display=editing?'block':'none';
+  if(!editing){editedSet.add(id);toast('수정 모드 — 발송 시 수정본이 학습됩니다');}
+}
+function approveCard(id,isDraft,msg){
+  const c=document.getElementById(id);
+  c.classList.add('gone');
+  setTimeout(()=>{c.style.display='none';checkEmpty();},300);
+  if(isDraft){
+    waitCount--;
+    if(id==='c3'){taskCount++;}
+    syncCounts();
+    const edited=editedSet.has('d'+id.slice(1));
+    toast(msg||(edited?'발송됨 · 수정본 코퍼스 저장':'발송됨 · 무수정 승인 +1'));
+    if(!edited)bumpGauge();
+  } else toast(msg||'처리됨');
+}
+function skipCard(id,msg){
+  const c=document.getElementById(id);
+  c.classList.add('gone');
+  setTimeout(()=>{c.style.display='none';checkEmpty();},300);
+  if(id[0]==='c'){waitCount--;syncCounts();}
+  toast(msg);
+}
+function doneTask(btn,id){
+  btn.classList.toggle('done');
+  document.getElementById(id).classList.toggle('donebody');
+  const done=btn.classList.contains('done');
+  taskCount+=done?-1:1;syncCounts();
+  toast(done?'업무 완료':'완료 해제');
+}
+function syncCounts(){
+  document.getElementById('nWait').textContent=waitCount;
+  document.getElementById('tWait').textContent=waitCount;
+  document.getElementById('nTask').textContent=taskCount;
+  document.getElementById('tTask').textContent=taskCount;
+}
+function bumpGauge(){
+  const v=document.getElementById('nRate');
+  let cur=parseInt(v.textContent);if(cur<99)cur++;
+  v.textContent=cur+'%';
+}
+function checkEmpty(){
+  const vis=id=>[...document.querySelectorAll(id+' > .card')].some(c=>c.style.display!=='none');
+  document.getElementById('emptyWait').style.display=vis('#p0')?'none':'block';
+  document.getElementById('emptySugg').style.display=vis('#p2')?'none':'block';
+  document.getElementById('emptyRev').style.display=vis('#p3')?'none':'block';
+}
+let toastTimer;
+function toast(m){
+  const t=document.getElementById('toast');
+  t.textContent=m;t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2400);
+}
+</script>
+</body>
+</html>
