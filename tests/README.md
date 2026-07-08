@@ -19,5 +19,6 @@ node가 있으면 `node <file>`로도 동작(순수 JS).
 | `cs-desk-dismiss-sort.test.js` | 승인앱 dismiss/정렬 (`msgTimeMs`·`kstDayStartMs`·`waitCmpDesc`·inflight/actionable) | dismiss 상태 전이·일괄 기준(0시 KST)·수신시각 정렬 |
 | `urlfetch-cooldown.test.js` | A 쿨다운 (`isUrlfetchExhausted_`·`cooldownUntilIso_`·`inCooldown_`) | 소진 감지·기록→스킵→만료 해제·수동 무시 |
 | `quota-knowledge.test.js` | B/D (`cutoffMs_`·`isBeforeCutoff_`·`normQ_`·`isTrivialMessage_`) | 컷오프·질문 정규화/중복/멱등·빈답변 스킵→나중 흡수 |
+| `urlfetch-meter.test.js` | urlfetch 계기판 (`fetchUsedKeyFor_`·`incCounter_`·`budgetSnapshot_`) | 일일 카운터 증가·날짜 롤오버·미러 fetchUsed 필드 |
 
 > 미러 방식이라 대상 코드 수정 시 해당 테스트의 함수 정의도 같이 맞춰야 한다.

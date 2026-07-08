@@ -66,6 +66,7 @@ button{font-family:inherit;}
 .budget .bar{flex:1;height:6px;border-radius:100px;background:var(--paper);border:1px solid var(--line);overflow:hidden;}
 .budget .bar i{display:block;height:100%;width:0;border-radius:100px;background:var(--go);transition:width .4s;}
 .budget .bv{font-family:var(--mono);font-size:10px;color:var(--ink2);min-width:52px;text-align:right;}
+.budget .fetchv{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
 .budget.warn .bar i{background:var(--wait-red);}
 .budget.warn .bv{color:var(--wait-red);}
 
@@ -198,6 +199,7 @@ button{font-family:inherit;}
       <span class="bl">GMAIL</span>
       <div class="bar"><i id="gmailFill"></i></div>
       <span class="bv" id="gmailVal">— /150</span>
+      <span class="fetchv" id="fetchVal" title="오늘 urlfetch 호출 수 (계측용, 상한·차단 없음)">FETCH —</span>
     </div>
   </div>
 
@@ -506,6 +508,8 @@ function renderBudget(){
   const g=document.getElementById('gmailGauge');
   const fill=document.getElementById('gmailFill');
   const val=document.getElementById('gmailVal');
+  const fv=document.getElementById('fetchVal');
+  if(fv) fv.textContent='FETCH '+((budgetData && budgetData.fetchUsed!=null)?budgetData.fetchUsed:'—');
   const budget = (budgetData && budgetData.budget!=null) ? Number(budgetData.budget) : 150;
   if(!budgetData || budgetData.used==null){
     fill.style.width='0%'; val.textContent='— /'+budget; g.classList.remove('warn'); return;

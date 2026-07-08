@@ -75,9 +75,15 @@ function fbDelete(path) {
 // ══════════════════════════════════════════════════════════════════
 var URLFETCH_COOLDOWN_KEY = 'CS_URLFETCH_COOLDOWN_UNTIL';
 var URLFETCH_COOLDOWN_MIN = 60;
-var _urlfetchStop = false; // 이번 run 소진 감지 후 추가 fetch 차단(재소진·시간낭비 방지)
+var _urlfetchStop = false;   // 이번 run 소진 감지 후 추가 fetch 차단(재소진·시간낭비 방지)
+var _fetchRunCount = 0;      // 이번 run urlfetch 호출 수(로그용, 계측만)
 
 // ── 순수(테스트용) ──
+// urlfetch 사용량 계기판: 일일 카운터 키/증가 (Gmail 카운터와 동일 패턴, 상한·차단 없음 — 계측만)
+function fetchUsedKeyFor_(dateStr) { return 'CS_FETCH_USED_' + dateStr; }
+function incCounter_(cur) { return parseInt(cur || '0', 10) + 1; }
+function fetchUsedKey_() { return fetchUsedKeyFor_(Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')); }
+
 function isUrlfetchExhausted_(msg) {
   var s = String(msg == null ? '' : msg).toLowerCase();
   return s.indexOf('too many times for one day') >= 0 && s.indexOf('urlfetch') >= 0;
@@ -105,6 +111,11 @@ function urlfetchCooldownActive_() {
 // 모든 urlfetch 공통 래퍼: 소진 감지 시 쿨다운 기록 + 같은 run 이후 fetch 차단. 그 외엔 그대로 위임.
 function csFetch_(url, params) {
   if (_urlfetchStop) throw new Error('urlfetch cooldown(run-local) — fetch 차단'); // 감지 후 재호출 방지(즉시 종료)
+  // 계측만(상한·차단 없음): 실제 fetch 시도마다 일일 카운터 +1 + 이번 run 카운트 (short-circuit분은 미집계)
+  var mp = PropertiesService.getScriptProperties();
+  var mk = fetchUsedKey_();
+  mp.setProperty(mk, String(incCounter_(mp.getProperty(mk))));
+  _fetchRunCount++;
   try {
     return UrlFetchApp.fetch(url, params);
   } catch (e) {
@@ -164,13 +175,15 @@ function gmRemoveLabel_(thread, lbl) { if (budgetGate_('removeLabel'))   thread.
 
 // ---- 예산 미러링 (M2b-1): run 종료 시 현재 사용량을 cs/meta/gmailBudget 에 기록 ----
 // fbSet(Firebase)이므로 Gmail 호출 아님 → 예산 미차감. run당 1회.
-function budgetSnapshot_(usedStr, budgetStr, date) { // 순수(테스트용)
-  return { used: parseInt(usedStr || '0', 10), budget: parseInt(budgetStr || '150', 10), date: date };
+function budgetSnapshot_(usedStr, budgetStr, date, fetchUsedStr) { // 순수(테스트용)
+  return { used: parseInt(usedStr || '0', 10), budget: parseInt(budgetStr || '150', 10), date: date,
+           fetchUsed: parseInt(fetchUsedStr || '0', 10) }; // urlfetch 일일 사용량(계측만)
 }
 function mirrorBudget_() {
   var p = PropertiesService.getScriptProperties();
   var date = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
-  var snap = budgetSnapshot_(p.getProperty('CS_GMAIL_USED_' + date), p.getProperty('CS_GMAIL_BUDGET'), date);
+  var snap = budgetSnapshot_(p.getProperty('CS_GMAIL_USED_' + date), p.getProperty('CS_GMAIL_BUDGET'), date,
+                             p.getProperty(fetchUsedKey_()));
   try { fbSet('cs/meta/gmailBudget', snap); } catch (e) { Logger.log('budget mirror 실패: ' + e); }
 }
 
@@ -334,7 +347,8 @@ function pollCsInbox() {
   try { autoApprovePass_(); } catch (e) { Logger.log('autoApprove 실패: ' + e); }
   // 발송 워커: approved → 원 스레드 reply + 학습 (예산 가드). 발송 실패가 위 단계를 막지 않음.
   try { sendApprovedDrafts(); } catch (e) { Logger.log('발송 워커 실패: ' + e); }
-  mirrorBudget_(); // run 종료 시 예산 사용량 미러링
+  mirrorBudget_(); // run 종료 시 예산 사용량 미러링 (fetchUsed 포함)
+  Logger.log('이번 run fetch: ' + _fetchRunCount + '회'); // urlfetch 소비 패턴 분석용
 }
 
 function ingestMessage_(msg, threadId) {
