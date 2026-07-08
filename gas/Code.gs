@@ -713,6 +713,29 @@ function backfillDraftReceivedAt() {
   Logger.log('backfill 완료 — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
 }
 
+// (2c) 1회성 백로그 정리: 현재 pending(또는 status 없음) draft 전체를 dismissed로 전환.
+//   - 삭제 아님(원문·필드 전부 보존) — status/dismissedAt 만 바꿈. 발송·학습 제외(앱 dismiss와 동일 의미).
+//   - 앱의 bulkDismiss와 달리 시각 임계값 없음: 오늘 새벽 밀려든 백로그까지 현재 pending 전부 대상.
+//   - 다중 경로 1회 fbUpdate('cs/drafts', patch)로 원자 반영. fbGet/fbUpdate만 → Gmail 미사용(예산 무관).
+//   - 멱등: 재실행 시 pending 없으면 0건.
+//   Clara가 GAS 에디터에서 1회 수동 실행(트리거 아님).
+function cleanupPendingBacklog() {
+  var drafts = fbGet('cs/drafts');
+  if (!drafts) { Logger.log('cs/drafts 없음 — 정리할 백로그 없음 (0건)'); return 0; }
+  var ids = Object.keys(drafts), now = new Date().toISOString(), patch = {}, n = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d) continue;
+    if (d.status && d.status !== 'pending') continue;   // pending 또는 status 없음만 대상
+    patch[id + '/status'] = 'dismissed';
+    patch[id + '/dismissedAt'] = now;
+    n++;
+  }
+  if (n > 0) fbUpdate('cs/drafts', patch);
+  Logger.log('백로그 pending 일괄 dismiss: ' + n + '건 (삭제 아님·보존, 발송·학습 제외)');
+  return n;
+}
+
 // corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)
 function retrieveExamples_(inbox) {
   var corpus = fbGet('cs/corpus'); if (!corpus) return [];
