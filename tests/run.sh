@@ -4,7 +4,7 @@ JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
 RUN="$JSC"; command -v node >/dev/null 2>&1 && [ ! -x "$JSC" ] && RUN=node
 DIR=$(dirname "$0")
 fail=0
-for f in "$DIR"/cs-desk-dismiss-sort.test.js "$DIR"/urlfetch-cooldown.test.js "$DIR"/quota-knowledge.test.js "$DIR"/urlfetch-meter.test.js; do
+for f in "$DIR"/cs-desk-dismiss-sort.test.js "$DIR"/urlfetch-cooldown.test.js "$DIR"/quota-knowledge.test.js "$DIR"/urlfetch-meter.test.js "$DIR"/parser-message.test.js; do
   echo "=== $(basename "$f") ==="
   out=$("$RUN" "$f"); echo "$out"
   echo "$out" | grep -q '0 FAIL' || fail=1

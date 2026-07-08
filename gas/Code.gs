@@ -436,6 +436,21 @@ function parseBooking_(raw) {
   return out;
 }
 
+// 종료마커: 게스트 메시지 뒤에 오는 booking 알림 고정 문자열(레거시·신형 공통).
+function isBookingEndMarker_(t) {
+  return t === '답변' || t === 'Reply' || t.indexOf('-->') === 0
+      || t.indexOf('예약 상세 정보') === 0 || t.indexOf('Reservation details') === 0
+      || t.indexOf('© Copyright') === 0;
+}
+// 상단 헤더 라인(신형: 시작마커 없이 본문 상단에 섞이는 것 — 관측된 것만): 이미지 alt·순수 URL/트래킹·제목/게스트명 반복.
+function isBookingHeaderLine_(t, subject, guest) {
+  if (/^\[image:/i.test(t)) return true;
+  if (/^https?:\/\//i.test(t)) return true;
+  if (subject && t === String(subject).trim()) return true;
+  if (guest && t === guest) return true;
+  return false;
+}
+
 // 1) 부킹 — 영문 템플릿 + 한국어 레거시 폴백
 function parseBookingCh_(raw) {
   var out = newParse_();
@@ -465,7 +480,10 @@ function parseBookingCh_(raw) {
   out.propertyName = findLineValue_(lines, 'Property name') || findLineValue_(lines, '숙소 명칭');
   if (!out.guest) out.guest = findLineValue_(lines, 'Guest name');
 
-  // 메시지: "{name} said:"(EN) 또는 "님의 메시지:"(KO) 줄 다음 ~ 종료마커 전까지 (줄 단위)
+  // 메시지 추출:
+  //  (1) 레거시(참고 3건): "{name} said:"(EN)/"님의 메시지:"(KO) 시작마커 다음 ~ 첫 종료마커 전까지.
+  //  (2) 신형(paradisewalkresidence 계정 실물, 시작마커 없음): 상단 헤더 스킵 후 첫 실질 라인 ~ 첫 종료마커 전까지.
+  //  (3) 시작·종료 둘 다 실패한 진짜 예외만 rawTail(전체 → dispatcher에서 1000자 상한).
   var si = -1;
   for (var i = 0; i < lines.length; i++) {
     var t = lines[i].trim();
@@ -475,14 +493,25 @@ function parseBookingCh_(raw) {
     if (!out.guest) { var sm = lines[si].trim().match(/^(.*?)\s+said:\s*$/i); if (sm) out.guest = sm[1].trim(); }
     var msg = [];
     for (var j = si + 1; j < lines.length; j++) {
-      var u = lines[j].trim();
-      if (u === 'Reply' || u.indexOf('-->') === 0 || u.indexOf('Reservation details') === 0
-          || u === '답변' || u.indexOf('예약 상세 정보') === 0 || u.indexOf('© Copyright') === 0) break;
+      if (isBookingEndMarker_(lines[j].trim())) break;
       msg.push(lines[j]);
     }
     out.message = msg.join('\n').trim() || null;
   } else {
-    out.message = body.trim() || null; out.rawTail = true; // 마커 못 찾음 → 전체(상한은 dispatcher에서)
+    // 신형: 헤더 스킵 후 첫 실질 라인부터 첫 종료마커 직전까지.
+    var picked = [], began = false, hitEnd = false;
+    for (var k = 0; k < lines.length; k++) {
+      var w = lines[k].trim();
+      if (isBookingEndMarker_(w)) { hitEnd = began; break; }
+      if (!began) { if (w === '' || isBookingHeaderLine_(w, subject, out.guest)) continue; began = true; picked.push(lines[k]); }
+      else { picked.push(lines[k]); }
+    }
+    if (began) {
+      out.message = picked.join('\n').trim() || null;
+      if (!hitEnd) out.rawTail = true;   // 시작만·종료 미검출 → 안전상 상한 적용
+    } else {
+      out.message = body.trim() || null; out.rawTail = true; // 시작·종료 둘 다 실패 = 진짜 예외
+    }
   }
 
   out.lang = guessLang_(out.message);
@@ -519,14 +548,17 @@ function parseAgoda_(raw) {
     var t = lines[i].trim();
     if (t.indexOf('아래 원문 메시지') >= 0 || t.indexOf('Did you know?') >= 0 || t.indexOf('이전 메시지') >= 0) { endIdx = i; break; }
   }
+  //   상단 트래킹 링크/이미지 alt/순수 URL을 게스트 메시지로 오인하지 않도록 헤더에서 제외(관측 근거).
   var mm = [], started = false;
   for (var j = 0; j < endIdx; j++) {
     var raw2 = lines[j], u = raw2.trim();
-    var isHeader = /^예약\s*번호/.test(u) || /^Reply from/i.test(u) || (out.guest && u === out.guest);
+    var isHeader = /^예약\s*번호/.test(u) || /^Reply from/i.test(u) || (out.guest && u === out.guest)
+                 || /^\[image:/i.test(u) || /^https?:\/\//i.test(u) || /tracking\.agoda\.com/i.test(u);
     if (!started) { if (u === '' || isHeader) continue; started = true; mm.push(raw2); }
     else { if (u === '' || isHeader) break; mm.push(raw2); }
   }
   out.message = mm.join('\n').trim() || null;
+  if (!out.message) { out.message = body.trim() || null; out.rawTail = true; } // 못 뽑으면 rawTail로만 폴백(전체는 dispatcher가 1000자 상한)
 
   out.lang = guessLang_(out.message);
   out.ok = !!(out.bookingId && out.message);
@@ -734,6 +766,28 @@ function cleanupPendingBacklog() {
   if (n > 0) fbUpdate('cs/drafts', patch);
   Logger.log('백로그 pending 일괄 dismiss: ' + n + '건 (삭제 아님·보존, 발송·학습 제외)');
   return n;
+}
+
+// (임시·읽기전용) 실물 raw 확인용 — 교훈① 실물 선행. 파서 마커를 손대기 전/후 육안 교차검증.
+//   cs/inbox에서 booking/agoda 각 최대 3건의 raw.body를 통째 Logger.log로 덤프.
+//   fbGet만 → Gmail 미접촉(예산 무관, urlfetch만). 트리거 아님 — Clara가 GAS에서 1회 실행 후 로그 확인.
+//   확인이 끝나면 이 함수는 삭제해도 됨.
+function dumpInboxRawSamples() {
+  var inbox = fbGet('cs/inbox'); if (!inbox) { Logger.log('cs/inbox 비어있음'); return; }
+  var want = { booking: 3, agoda: 3 }, seen = { booking: 0, agoda: 0 };
+  var ids = Object.keys(inbox);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], r = inbox[id]; if (!r || !r.raw) continue;
+    var ch = r.source || detectChannel_(r.raw.from);
+    if (ch !== 'booking' && ch !== 'agoda' || seen[ch] >= want[ch]) continue;
+    seen[ch]++;
+    Logger.log('\n===== [' + ch + ' #' + seen[ch] + '] msgId=' + id + ' =====');
+    Logger.log('FROM: ' + r.raw.from);
+    Logger.log('SUBJECT: ' + r.raw.subject);
+    Logger.log('----- BODY START -----\n' + r.raw.body + '\n----- BODY END -----');
+    if (seen.booking >= want.booking && seen.agoda >= want.agoda) break;
+  }
+  Logger.log('\n덤프 완료 — booking:' + seen.booking + ' / agoda:' + seen.agoda + ' (마커 수정 결과와 육안 대조)');
 }
 
 // corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)
