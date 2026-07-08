@@ -38,13 +38,13 @@ function fbUrl_(path) {
   return FB_BASE + '/' + String(path).replace(/^\/+/, '') + '.json?auth=' + fbAuth_();
 }
 function fbGet(path) {
-  var res = UrlFetchApp.fetch(fbUrl_(path), { muteHttpExceptions: true });
+  var res = csFetch_(fbUrl_(path), { muteHttpExceptions: true });
   if (res.getResponseCode() >= 300) throw new Error('fbGet ' + path + ': ' + res.getContentText());
   var body = res.getContentText();
   return body === 'null' || body === '' ? null : JSON.parse(body);
 }
 function fbSet(path, obj) {
-  var res = UrlFetchApp.fetch(fbUrl_(path), {
+  var res = csFetch_(fbUrl_(path), {
     method: 'put', contentType: 'application/json',
     payload: JSON.stringify(obj), muteHttpExceptions: true
   });
@@ -52,7 +52,7 @@ function fbSet(path, obj) {
   return JSON.parse(res.getContentText());
 }
 function fbUpdate(path, obj) {
-  var res = UrlFetchApp.fetch(fbUrl_(path), {
+  var res = csFetch_(fbUrl_(path), {
     method: 'patch', contentType: 'application/json',
     payload: JSON.stringify(obj), muteHttpExceptions: true
   });
@@ -60,10 +60,63 @@ function fbUpdate(path, obj) {
   return JSON.parse(res.getContentText());
 }
 function fbDelete(path) {
-  var res = UrlFetchApp.fetch(fbUrl_(path), { method: 'delete', muteHttpExceptions: true });
+  var res = csFetch_(fbUrl_(path), { method: 'delete', muteHttpExceptions: true });
   if (res.getResponseCode() >= 300) throw new Error('fbDelete ' + path + ': ' + res.getContentText());
   return true;
 }
+
+// ══════════════════════════════════════════════════════════════════
+// urlfetch 일일 쿼터 소진 가드 — 소진 감지 시 60분 쿨다운으로 회복 가속
+//   - 감지: UrlFetchApp.fetch가 "too many times for one day: urlfetch" 예외를 던질 때(모든 fetch는 csFetch_ 경유)
+//   - 기록: Script Property CS_URLFETCH_COOLDOWN_UNTIL = now+60분(ISO)
+//   - 자동 run(pollCsInbox)은 쿨다운 중이면 시작부에서 즉시 skip (Gmail·fetch 미접촉). 만료 시 속성 제거 후 재개.
+//   - 수동 함수(backfill 등)는 이 게이트를 호출하지 않음 → 쿨다운 무시하고 시도 허용(클라라가 의도적으로 실행).
+//   ※ Gmail 예산 가드(budgetGate_/CS_GMAIL_*)와 별개의 독립 가드 — 발송·파서·예산 로직 미변경.
+// ══════════════════════════════════════════════════════════════════
+var URLFETCH_COOLDOWN_KEY = 'CS_URLFETCH_COOLDOWN_UNTIL';
+var URLFETCH_COOLDOWN_MIN = 60;
+var _urlfetchStop = false; // 이번 run 소진 감지 후 추가 fetch 차단(재소진·시간낭비 방지)
+
+// ── 순수(테스트용) ──
+function isUrlfetchExhausted_(msg) {
+  var s = String(msg == null ? '' : msg).toLowerCase();
+  return s.indexOf('too many times for one day') >= 0 && s.indexOf('urlfetch') >= 0;
+}
+function cooldownUntilIso_(nowMs, mins) { return new Date(nowMs + mins * 60000).toISOString(); }
+function inCooldown_(untilIso, nowMs) { var t = Date.parse(untilIso); return isFinite(t) && nowMs < t; }
+
+// ── 속성 연동 ──
+function enterUrlfetchCooldown_() {
+  var p = PropertiesService.getScriptProperties();
+  if (p.getProperty(URLFETCH_COOLDOWN_KEY)) return; // 이미 기록됨 → 중복 방지
+  var until = cooldownUntilIso_(Date.now(), URLFETCH_COOLDOWN_MIN);
+  p.setProperty(URLFETCH_COOLDOWN_KEY, until);
+  Logger.log('⛔ urlfetch 일일 쿼터 소진 감지 — ' + URLFETCH_COOLDOWN_MIN + '분 쿨다운 기록 (해제 예정 ' + until + ')');
+}
+// 자동 run 시작부 게이트: 쿨다운 중이면 true(skip). 만료 시 속성 제거 후 false(정상 진행).
+function urlfetchCooldownActive_() {
+  var p = PropertiesService.getScriptProperties();
+  var until = p.getProperty(URLFETCH_COOLDOWN_KEY);
+  if (!until) return false;
+  if (inCooldown_(until, Date.now())) { Logger.log('urlfetch 쿨다운 중, skip (해제 예정 ' + until + ')'); return true; }
+  p.deleteProperty(URLFETCH_COOLDOWN_KEY); // 만료 → 해제 후 정상 진행
+  return false;
+}
+// 모든 urlfetch 공통 래퍼: 소진 감지 시 쿨다운 기록 + 같은 run 이후 fetch 차단. 그 외엔 그대로 위임.
+function csFetch_(url, params) {
+  if (_urlfetchStop) throw new Error('urlfetch cooldown(run-local) — fetch 차단'); // 감지 후 재호출 방지(즉시 종료)
+  try {
+    return UrlFetchApp.fetch(url, params);
+  } catch (e) {
+    if (isUrlfetchExhausted_(e)) { enterUrlfetchCooldown_(); _urlfetchStop = true; }
+    throw e; // 기존 호출부 에러 처리(로그 등) 유지
+  }
+}
+
+// ── 백로그 컷오프(B): CS_CUTOFF(ISO) 이전 게스트 수신 스레드는 초안·적재 없이 라벨만 이동 ──
+// 순수(테스트용). CS_CUTOFF 미설정 → cutoffMs_ = null → isBeforeCutoff_ 항상 false → 현행 동작 유지.
+function cutoffMs_(cutoffIso) { if (!cutoffIso) return null; var t = Date.parse(cutoffIso); return isFinite(t) ? t : null; }
+function isBeforeCutoff_(msgTimeMs, cutoffMs) { return cutoffMs != null && msgTimeMs > 0 && msgTimeMs < cutoffMs; }
 
 // ══════════════════════════════════════════════════════════════════
 // 메인 폴링 — 1분 트리거가 호출
@@ -243,6 +296,7 @@ function installCsTriggers() {
 function safeDrafts_() { try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); } }
 
 function pollCsInbox() {
+  if (urlfetchCooldownActive_()) return; // urlfetch 쿨다운 중: 즉시 반환(Gmail·fetch 미접촉). 만료 시 내부에서 해제 후 진행.
   var label = gmGetLabel_(CS_LABEL);
   if (_gmailStop) { safeDrafts_(); return; }
   if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); safeDrafts_(); return; }
@@ -252,10 +306,19 @@ function pollCsInbox() {
 
   // 저연비: 처리 완료 스레드는 CS_LABEL에서 제거(라벨 이동)하므로 매 run 미처리분만 조회됨.
   // (멱등 이중 안전판: ingestMessage_ 의 fbGet 존재체크가 재적재 방지)
+  // 백로그 컷오프(B): CS_CUTOFF 이전 스레드는 초안·적재 건너뛰고 라벨만 이동(urlfetch 미사용).
+  var cutoffMs = cutoffMs_(PropertiesService.getScriptProperties().getProperty('CS_CUTOFF'));
+  var cutoffSkipped = 0;
   var threads = gmGetThreads_(label, 0, 20);
   for (var t = 0; t < threads.length && !_gmailStop; t++) {
     var msgs = gmGetMessages_(threads[t]);
     if (_gmailStop) break;
+    var latestMs = msgs.length ? msgs[msgs.length - 1].getDate().getTime() : 0; // 스레드 최신 메시지 시각(Gmail, urlfetch 아님)
+    if (isBeforeCutoff_(latestMs, cutoffMs)) {                                   // 컷오프 이전 → 적재/초안 스킵
+      gmAddLabel_(threads[t], doneLabel); gmRemoveLabel_(threads[t], label);
+      cutoffSkipped++;
+      continue;
+    }
     var hadFailure = false;
     for (var m = 0; m < msgs.length; m++) {
       try { ingestMessage_(msgs[m], threads[t].getId()); }
@@ -263,6 +326,7 @@ function pollCsInbox() {
     }
     if (!hadFailure) { gmAddLabel_(threads[t], doneLabel); gmRemoveLabel_(threads[t], label); }
   }
+  if (cutoffSkipped) Logger.log('컷오프 이전 — 초안 스킵: ' + cutoffSkipped + '건');
 
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   safeDrafts_();
@@ -558,6 +622,14 @@ var CLARA_SYSTEM =
   'OTA(부킹닷컴) 게스트 메시지에 클라라의 말투(간결·다정·실용)로 답합니다. ' +
   '아래 [과거 응대 예시]의 어투와 사실을 최대한 따르세요. ' +
   '확실치 않은 사실(가격·정책·주소·시설 세부 등)은 지어내지 말고, 확인 후 안내하겠다고 정중히 답합니다. ' +
+  '[숙소 확정 정보] 아래는 게스트 가이드(https://pwr-guide.online)의 확정 사실입니다. 관련 문의엔 이 정보로 직접 정확히 답하고, 되도록 가이드 링크를 함께 안내하세요(아래에 없는 세부는 지어내지 말 것):\n' +
+  '· 위치/셔틀: 인천공항 T1 인근 무인 셀프 체크인 레지던스. 무료 순환버스 — T1은 3층 3·12번 게이트, T2는 3층 7번 게이트에서 03번 버스(AICC행) 탑승 → Grand Hyatt Hotel 하차(T1 첫 정류장, T2 4번째) → 횡단보도 건너면 건물. 공항 복귀는 04번 버스(T1 약 5분, T2 약 25분).\n' +
+  '· 체크인/아웃: 체크인 15:00부터, 체크아웃 11:00까지. 체크인 전·체크아웃 후 짐 보관 불가(현장 사무실 없음).\n' +
+  '· 객실: Wi-Fi 정보는 TV가 놓인 서랍장 끝 스티커. 냉난방은 팬코일(패널은 욕실 문 옆).\n' +
+  '· 주차: 건물 내 유료만 — 첫 20분 ₩1,000, 이후 30분당 ₩1,000, 1일 최대 ₩50,000. 공항 인근 규정으로 무료 주차 지원 불가.\n' +
+  '· 하우스룰: 전면 금연(위반 시 특별 청소비), 최대 2인, 반려동물 불가, 파티·소음 금지, 예고 없는 방문자에게 문 열지 말 것(저희 팀은 사전 안내 없이 방문하지 않음).\n' +
+  '· 도어코드: 개인정보·안전을 위해 객실 번호·도어코드는 도착 당일 예약 플랫폼 메시지로만 발송.\n' +
+  '· 문의: WhatsApp +82 10-8227-2845, LINE·WeChat ID pwresi, 지원 시간 09:00–21:00 KST(그 외 시간대 답변 지연 가능).\n' +
   '게스트 언어가 영어가 아니면 reply 끝에 한 줄 번역 면책 문구를 그 게스트 언어로 덧붙이세요. ' +
   '[안내 이미지 링크] 관련된 문의일 때만 아래 URL을 답변(reply)에 플레인텍스트 전체 URL로 자연스럽게 포함하세요(마크다운·대괄호 금지, 강제 삽입 금지, 관련 없으면 넣지 말 것):\n' +
   '- 셔틀/오시는길/공항 이동 문의: https://pwr-clair.github.io/cs/assets/images/Map-shuttle-overview.jpeg (공항↔숙소 전체 경로), https://pwr-clair.github.io/cs/assets/images/map-to-airport.png (숙소→버스정류장 도보)\n' +
@@ -661,7 +733,7 @@ function claudeDraft_(inbox, examples) {
 
   var payload = { model: CLAUDE_MODEL, max_tokens: CLAUDE_MAXTOK, system: CLARA_SYSTEM,
                   messages: [{ role: 'user', content: user }] };
-  var res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+  var res = csFetch_('https://api.anthropic.com/v1/messages', {
     method: 'post', contentType: 'application/json',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     payload: JSON.stringify(payload), muteHttpExceptions: true
@@ -707,7 +779,7 @@ function tgNotify_(text) {
   var tok = props.getProperty('TG_TOKEN'), chat = props.getProperty('TG_CHAT');
   if (!tok || !chat) { Logger.log('TG 미설정 — 푸시 스킵: ' + text); return; }
   try {
-    UrlFetchApp.fetch('https://api.telegram.org/bot' + tok + '/sendMessage', {
+    csFetch_('https://api.telegram.org/bot' + tok + '/sendMessage', {
       method: 'post', contentType: 'application/json',
       payload: JSON.stringify({ chat_id: chat, text: text }), muteHttpExceptions: true
     });
@@ -737,22 +809,76 @@ function importCorpusFromSheet() {
     }
   }
 
-  var n = 0;
+  var n = 0, skippedNoAns = 0;
   for (var r = 1; r < values.length; r++) {
     var lang = String(values[r][0] || '').trim();   // A lang
     var situ = String(values[r][1] || '').trim();   // B guest_message → 상황요약
     var ans  = String(values[r][2] || '').trim();   // C clara_reply   → 최종답변
     var cat  = String(values[r][3] || '').trim();   // D category
-    if (!situ && !ans) continue;
+    if (!situ && !ans) continue;                     // 완전 빈 행
+    // 답변 미기입 행은 흡수하지 않고 corpus 마킹도 안 함 → 나중에 답을 채우면 재실행 시 정상 흡수(D3).
+    if (!ans) { skippedNoAns++; continue; }
     if (!lang) lang = guessLang_(ans || situ);
-    var id = 'sheet_' + r;
-    if (fbGet('cs/corpus/' + id)) continue; // 재실행 멱등
+    var id = 'sheet_' + r;                           // 행 위치 기반 멱등(행 삽입·삭제 금지 전제 — export는 말단 append만)
+    if (fbGet('cs/corpus/' + id)) continue;          // 재실행 멱등(이미 흡수한 답변 행)
     fbSet('cs/corpus/' + id, {
       '상황요약': situ, '최종답변': ans, lang: lang, category: cat || null, origin: '구축', src: 'sheet'
     });
     n++;
   }
+  if (skippedNoAns) Logger.log('답변 미기입 스킵: ' + skippedNoAns + '건 (클라라가 clara_reply 채운 뒤 재실행하면 흡수)');
   Logger.log('시트 임포트 완료: corpus +' + n + '건');
+}
+
+// ── 순수(테스트용): 질문 정규화(중복 판정용) / 단순 인사·감사 판별 ──
+function normQ_(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').replace(/[\s.!?…~]+$/,'').trim();
+}
+function isTrivialMessage_(s) {
+  var t = normQ_(s);
+  if (!t || t.length <= 3) return true; // 빈/너무 짧음
+  // 메시지 전체가 인사/감사뿐(질문 요소 없음)일 때만 true — 실제 질문은 통과.
+  var TRIVIAL = /^(hi|hello|hey|yo|thanks|thank you|thx|ty|ok|okay|good (morning|afternoon|evening|night|day)|안녕하세요|안녕|감사합니다|감사해요|고맙습니다|고마워요|넵|네|알겠습니다|ありがとうございます|ありがとう|こんにちは|よろしくお願いします|谢谢|谢谢你|你好|好的)[\s!.~,]*$/i;
+  return TRIVIAL.test(t);
+}
+
+// (2c) 백로그 질문 → CS-DB 시트 말단 적재 (D, 수동 실행). 클라라가 clara_reply 열만 채우면 importCorpusFromSheet가 흡수.
+//   - cs/drafts 전체(dismissed 포함)에서 게스트 질문(origMsg) 추출.
+//   - 단순 인사·감사 제외, 중복은 대표 1개(정규화 일치). 멱등: 기존 시트 B열(guest_message) 정규화값을 seen에 시드 → 재실행/기존 코퍼스 중복 방지.
+//   - 기존 행 무접촉(수정·삭제·삽입 금지). 마지막 데이터행 아래에 [A=lang, B=질문, C=빈칸, D=category] 블록만 추가.
+//   - urlfetch: cs/drafts 조회 1회(수동 함수 → 쿨다운 무시). Gmail 미사용.
+function exportBacklogQuestionsToSheet() {
+  var drafts = fbGet('cs/drafts');
+  if (!drafts) { Logger.log('cs/drafts 없음 — 적재할 질문 없음'); return; }
+  var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
+  var sheet = ss.getSheets()[0];
+  var values = sheet.getDataRange().getValues();
+  // 헤더 검증(임포트와 동일 기대) — 불일치 시 중단(엉뚱한 열 오염 방지)
+  var EXPECT = ['lang', 'guest_message', 'clara_reply', 'category'];
+  var header = (values[0] || []).map(function (h) { return String(h).trim(); });
+  for (var c = 0; c < EXPECT.length; c++) {
+    if (header[c] !== EXPECT[c]) { Logger.log('헤더 불일치 — 적재 중단. [' + header.join(' | ') + ']'); return; }
+  }
+  // seen: 기존 B열(질문) 정규화값 → 중복·기존 코퍼스 재적재 방지(멱등)
+  var seen = {};
+  for (var r = 1; r < values.length; r++) { var q0 = normQ_(values[r][1]); if (q0) seen[q0] = true; }
+
+  var ids = Object.keys(drafts), rows = [], appended = 0, dup = 0, trivial = 0, noText = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var d = drafts[ids[i]]; if (!d) continue;
+    var q = String(d.origMsg || '').trim();
+    if (!q) { noText++; continue; }
+    if (isTrivialMessage_(q)) { trivial++; continue; }
+    var key = normQ_(q);
+    if (!key || seen[key]) { dup++; continue; }
+    seen[key] = true;
+    rows.push([ d.lang || guessLang_(q), q, '', d.category || '' ]); // C(clara_reply)는 빈칸 — 클라라가 채움
+    appended++;
+  }
+  if (rows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 4).setValues(rows); // 말단 블록 추가(기존 행 무접촉)
+  }
+  Logger.log('백로그 질문 시트 적재: +' + appended + '건 (중복 ' + dup + ' · 인사/단순 ' + trivial + ' · 원문없음 ' + noText + ' 스킵). clara_reply 채운 뒤 importCorpusFromSheet 실행.');
 }
 
 // (1b) Gmail 마이닝 → cs/corpus (게스트 메시지 ↔ 클라라 회신 쌍)
