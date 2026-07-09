@@ -334,11 +334,12 @@ function resolveGuestFinal_(d) {
   var claraFinal = String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '');
   var guestLang = String(d.lang || 'en').toLowerCase();
   if (guestLang === editLang) return claraFinal;          // ko게스트+ko편집 / en게스트+en편집 → 그대로
-  if (!d.editedByClara) return d.reply || claraFinal;      // 미편집 → Claude 원문(이미 게스트 언어)
+  if (!d.editedByClara) return d.reply || claraFinal;      // 미편집 → Claude 원문(이미 게스트 언어, 번역 불필요)
   var iso = langToIso_(guestLang);
-  if (!iso) return d.reply || claraFinal;                  // 타깃 코드 불명(eu 등) → 원문 폴백(발송 전 재확인 필요)
-  try { return LanguageApp.translate(claraFinal, editLang, iso); } // 무료 번역
-  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + iso + '): ' + e); return d.reply || claraFinal; }
+  var target = iso || 'en';                                // (4) 타깃 코드 불명(eu 등) → 영어로 발송(원문 폴백 아님)
+  if (target === editLang) return claraFinal;              // 영어권+영어편집 등
+  try { return LanguageApp.translate(claraFinal, editLang, target); } // 무료 번역(불명이면 en)
+  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + target + '): ' + e); return d.reply || claraFinal; }
 }
 
 function saveApprovedToSheet_() {
@@ -369,12 +370,13 @@ function saveApprovedToSheet_() {
       rows.push([lang, q, claraFinal, cat, score]);
     }
 
-    var now = new Date().toISOString();
+    var now = new Date().toISOString(), startRow = 0;
     try {
       var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
       var sheet = ss.getSheets()[0];
       ensureSelfScoreHeader_(sheet);
-      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows); // native 쓰기(쿼터 무관)
+      startRow = sheet.getLastRow() + 1;                    // 이 배치의 첫 행(재편집 갱신용 sheetRow 기록)
+      sheet.getRange(startRow, 1, rows.length, 5).setValues(rows); // native 쓰기(쿼터 무관)
     } catch (se) {
       // 시트 쓰기 실패(권한·시트 오류 등) → status 'approved' 유지 + saveError 마킹.
       // DESK가 '저장 실패 · 재시도' 표시 → 무한 '저장 대기중' 방지.
@@ -399,9 +401,53 @@ function saveApprovedToSheet_() {
       patch[sid + '/saveError'] = null;
       patch[sid + '/finalReply'] = resolveGuestFinal_(dm);   // 게스트 언어 발송본(발송 대비)
       patch[sid + '/finalReplyKo'] = (editLang === 'ko') ? (dm.claraFinal || dm.replyKo || null) : (dm.replyKo || null); // 한국어 표시본
+      patch[sid + '/sheetRow'] = startRow + m;               // (2) 재편집 시 이 행을 갱신(새 행 추가 아님)
     }
     fbUpdate('cs/drafts', patch);
-    Logger.log('학습 저장: ' + rows.length + '건 시트 append + status=saved');
+    Logger.log('학습 저장: ' + rows.length + '건 시트 append(row ' + startRow + '~) + status=saved');
+  } finally { lock.releaseLock(); }
+}
+
+// (2) 학습됨 재편집 정정: pendingCorrection & sheetRow 있는 저장분 → 해당 시트 '행을 갱신'(새 행 아님).
+//   7월 학습기간만(learnModeOn_). 코퍼스 중복 방지 = 같은 행 in-place 갱신 → importCorpusFromSheet 재실행 시 같은 sheet_r 키로 흡수.
+function correctSavedRows_() {
+  if (!learnModeOn_()) return;                              // 8월 실발송 전환 시 재편집 비활성
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (le) { Logger.log('정정 락 실패 — skip'); return; }
+  try {
+    var drafts = fbGet('cs/drafts'); if (!drafts) return;
+    var ids = Object.keys(drafts), targets = [];
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i], d = drafts[id];
+      if (!d || d.status !== 'saved' || !d.pendingCorrection || !d.sheetRow) continue;
+      targets.push([id, d]);
+    }
+    if (!targets.length) return;
+    var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
+    var sheet = ss.getSheets()[0];
+    var now = new Date().toISOString(), patch = {}, n = 0;
+    for (var k = 0; k < targets.length; k++) {
+      var sid = targets[k][0], dm = targets[k][1];
+      var q = String(dm.origMsg || '').trim();
+      var claraFinal = String(dm.claraFinal || dm.replyKo || dm.reply || '').trim();
+      var lang = dm.lang || guessLang_(claraFinal || q);
+      var cat = dm.category || '';
+      var score = (dm.claraToneScore != null && dm.claraToneScore !== 0) ? dm.claraToneScore : '';
+      try {
+        sheet.getRange(dm.sheetRow, 1, 1, 5).setValues([[lang, q, claraFinal, cat, score]]); // 같은 행 갱신
+      } catch (se) {
+        patch[sid + '/saveError'] = String(se).slice(0, 180); patch[sid + '/saveErrorAt'] = now; continue;
+      }
+      var editLang = dm.claraFinalLang || (String(dm.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
+      patch[sid + '/finalReply'] = resolveGuestFinal_(dm);
+      patch[sid + '/finalReplyKo'] = (editLang === 'ko') ? (dm.claraFinal || dm.replyKo || null) : (dm.replyKo || null);
+      patch[sid + '/pendingCorrection'] = null;
+      patch[sid + '/savedAt'] = now;
+      patch[sid + '/saveError'] = null;
+      n++;
+    }
+    if (Object.keys(patch).length) fbUpdate('cs/drafts', patch);
+    Logger.log('학습 정정: ' + n + '건 행 갱신(새 행 추가 없음)');
   } finally { lock.releaseLock(); }
 }
 
@@ -411,11 +457,11 @@ function saveApprovedToSheet_() {
 //   보안: 처리 대상은 '이미 승인된(approved) draft'뿐 — 게스트 발송 없음·멱등·락 보호. 시크릿 불필요(레포에 시크릿 금지).
 //   배포(Clara 1회): 배포 → 새 배포 → 웹앱 / 실행=본인(paradisewalkresidence) / 액세스=모든 사용자 → 배포 후 publishSaveHookUrl 실행.
 function doPost(e) {
-  try { saveApprovedToSheet_(); return ContentService.createTextOutput('ok'); }
+  try { saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok'); }
   catch (err) { Logger.log('doPost 저장 실패: ' + err); return ContentService.createTextOutput('err:' + err); }
 }
 function doGet(e) { // 브라우저 수동 점검용(같은 동작)
-  try { saveApprovedToSheet_(); return ContentService.createTextOutput('ok(get)'); }
+  try { saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok(get)'); }
   catch (err) { return ContentService.createTextOutput('err:' + err); }
 }
 // 배포 후 1회 실행: 현재 웹앱 배포 URL을 cs/config/saveHookUrl 에 등록 → DESK가 자동으로 읽어 즉시저장 호출.
@@ -443,6 +489,7 @@ function pollCsInbox() {
   //   쿨다운은 '비싼 초안 대량생성' 방어용 자체 타이머라, 저비용(소수 읽기+시트 native)인 저장까지
   //   막을 이유가 없음. 실제 하드 소진이면 saveApprovedToSheet_ 첫 fbGet 에서 예외 → 여기서 catch(자기노출).
   try { saveApprovedToSheet_(); } catch (e) { Logger.log('학습 저장 워커 실패(=urlfetch 하드 소진 가능): ' + e); }
+  try { correctSavedRows_(); } catch (e) { Logger.log('학습 정정 워커 실패: ' + e); } // (2) 재편집 행 갱신(백업 경로)
 
   if (urlfetchCooldownActive_()) return; // urlfetch 쿨다운 중: 이하 초안 대량생성·발송은 skip. 만료 시 내부에서 해제 후 진행.
   var label = gmGetLabel_(CS_LABEL);

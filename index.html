@@ -169,6 +169,10 @@ button{font-family:inherit;}
 .ans{padding:12px 13px;}
 .ans-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
 .ans-top .who{font-size:9px;letter-spacing:1px;color:var(--muted);font-weight:700;}
+.grp-clickable{cursor:pointer;}
+.grp-clickable:active{background:var(--go-soft);}
+.draft.draft-committed{background:var(--go-soft);border:1px solid #BEE3D2;}
+.draft.draft-committed .who b{color:var(--go);}
 .btns{display:flex;gap:7px;}
 .b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
 .b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
@@ -311,7 +315,8 @@ let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
 let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
-let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
+let edits={}, editingIds=new Set(); // 인라인 수정 버퍼(편집창 열림 동안)
+let committedEdit={}; // [저장]으로 확정한 편집본(승인이 이 값만 사용 → AI 초안 덮임 원천 차단)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
 let optimisticSaved=new Set(); // (2) 승인 즉시 '저장됨' 낙관적 표시 id (Firebase 왕복 대기 없이 체감 즉시)
 let expandedGroups=new Set(); // 예약 스레드 펼침 상태(재렌더 넘어 유지)
@@ -402,11 +407,16 @@ function buildGroups(entries){
 }
 const CHAN_LABEL={booking:'Booking',agoda:'Agoda',expedia:'Expedia'};
 function platformBadge(d){ const c=d&&d.channel; return c?'<span class="chan">'+esc(CHAN_LABEL[c]||c)+'</span>':''; }
-// 그룹 헤더: 게스트 · 플랫폼 · 방 · 숙박일자 · [대화 N] · (N>1이면) 펼침 토글
-function groupHeader(g, head){
+// 그룹 헤더: 게스트 · 플랫폼 · 방 · 숙박일자 · [대화 N] · 펼침 토글.
+//   opts.always=true면 N==1이어도 토글 노출(학습됨: 접힘=헤더만). opts.collapsedLabel/expandedLabel로 문구.
+function groupHeader(g, head, opts){
+  opts=opts||{};
   const N=g.items.length, expanded=expandedGroups.has(g.key);
-  const toggle = N>1 ? '<button class="thr-toggle" onclick="toggleGroup(\''+g.key+'\')">'+(expanded?'대화 접기 ▴':'이전 대화 '+(N-1)+' ▾')+'</button>' : '';
-  return '<div class="grp-head">'+
+  const show = opts.always || N>1;
+  const cLabel = opts.collapsedLabel || ('이전 대화 '+(N-1)+' ▾');
+  const eLabel = opts.expandedLabel || '대화 접기 ▴';
+  const toggle = show ? '<button class="thr-toggle" onclick="event.stopPropagation();toggleGroup(\''+g.key+'\')">'+(expanded?eLabel:cLabel)+'</button>' : '';
+  return '<div class="grp-head'+(show?' grp-clickable':'')+'"'+(show?' onclick="toggleGroup(\''+g.key+'\')"':'')+'>'+
     '<div class="grp-line"><span class="guest">'+esc(head.guest||'게스트')+'</span>'+platformBadge(head)+
       '<span class="lang">'+esc(String(head.lang||'—').toUpperCase())+'</span>'+
       '<span class="thr-n">대화 '+N+'</span></div>'+
@@ -431,6 +441,7 @@ function answerBody(id,d){
   const editing=editingIds.has(id);
   const editVal=(edits[id]!=null)?edits[id]:editSourceText(d); // 편집창 = 한국어(비영어) / 영어(영어권)
   const saveFailed=(learnMode && st==='approved' && d.saveError);
+  const committed=committedEdit[id]; const hasCommit=committed!=null; // 확정 편집본 여부
 
   let right;
   if(saveFailed) right='<span class="status error">저장 실패</span>';
@@ -442,9 +453,9 @@ function answerBody(id,d){
   let actions;
   if(st==='pending'){
     actions='<div class="btns">'+
-      '<button class="b" onclick="toggleEdit(\''+id+'\')">'+(editing?'편집 닫기':'수정')+'</button>'+
-      '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>'+
-      '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인 · 저장':'승인 · 발송')+'</button>'+
+      '<button class="b'+(editing?' go':'')+'" onclick="editOrSave(\''+id+'\')">'+(editing?'저장':'수정')+'</button>'+
+      (editing?'':'<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>')+
+      '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인':'승인 · 발송')+'</button>'+
     '</div>';
   } else if(saveFailed){
     actions='<div class="err-row"><div class="errmsg">저장 실패: '+esc(d.saveError)+'</div>'+
@@ -459,14 +470,19 @@ function answerBody(id,d){
   const editArea=(st==='pending'&&editing)
     ? '<div class="edit-hint">'+editLangLbl+'</div><textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
 
+  // 확정 편집본이 있으면 그걸(확정 표시), 없으면 AI 초안(게스트 본문+한국어 대역)을 노출.
+  const draftBlock = hasCommit
+    ? '<div class="draft draft-committed"><div class="who">내 편집 · <b>확정</b>('+(editSourceLang(d)==='ko'?'한국어':'영어')+')</div>'+
+        '<div class="reply">'+esc(committed||'—')+'</div><div class="edit-hint">게스트 언어 발송본은 [승인] 저장 시 자동 생성</div></div>'
+    : '<div class="draft"><div class="who">초안 · <b>학습된 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
+        '<div class="reply">'+esc(replyShown||'—')+'</div>'+
+        (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
+        (imgs.length?thumbsHtml(imgs):'')+'</div>';
+
   return '<div class="ans">'+
     '<div class="ans-top"><div class="who">답할 문의</div>'+cat+right+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    '<div class="draft"><div class="who">초안 · <b>학습된 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
-      '<div class="reply">'+esc(replyShown||'—')+'</div>'+
-      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
-      (imgs.length?thumbsHtml(imgs):'')+
-    '</div>'+
+    draftBlock+
     editArea+
     (st==='pending'?toneScoreRow(id):'')+
     actions+
@@ -556,8 +572,10 @@ function renderSent(){
     const savedItems=g.items.filter(([k,d])=>isSavedView(k,d));
     const latest=savedItems[savedItems.length-1]||g.latest;
     const expanded=expandedGroups.has(g.key);
-    const body = expanded ? bubbleTimeline(g.items) : sentDetail(latest[0],latest[1]);
-    return '<div class="card grp">'+groupHeader(g,latest[1])+body+'</div>';
+    // (3) 기본 접힘=헤더만. 펼침=이전 대화 말풍선 + 최신 저장분 상세(재편집 가능).
+    const prior=g.items.filter(([k,d])=>k!==latest[0]);
+    const body = expanded ? ((prior.length?bubbleTimeline(prior):'')+sentDetail(latest[0],latest[1])) : '';
+    return '<div class="card grp">'+groupHeader(g,latest[1],{always:true,collapsedLabel:'펼치기 ▾',expandedLabel:'접기 ▴'})+body+'</div>';
   }).join('');
 }
 // (3) 학습됨 저장분 상세: 원문 + 클라라 확정 편집본(=코퍼스 원본, 한국어/영어) + 게스트 언어 발송본 + 자기평가.
@@ -574,15 +592,26 @@ function sentDetail(id,d){
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
   const score=(d.claraToneScore!=null&&d.claraToneScore>0)?d.claraToneScore:0;
   const showGuest = editLang!==String(d.lang||'').toLowerCase() && guestShown && guestShown!==claraShown;
+  const editing=editingIds.has(id);
+  const correcting = learnMode && d.status==='saved' && !!d.pendingCorrection; // 정정 저장 진행 중
+  const editVal=(edits[id]!=null)?edits[id]:claraFinal;
+  const editArea = editing
+    ? '<div class="edit-hint">'+(editLang==='ko'?'한국어로 정정 — 저장 시 같은 학습 행 갱신':'영어로 정정')+'</div><textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
+  // (2) 7월엔 재편집 허용, 8월 실발송 전환(learnMode off) 시 버튼 숨김.
+  const editBtn = learnMode
+    ? '<div class="btns"><button class="b'+(editing?' go':'')+'" onclick="editOrSaveCorrection(\''+id+'\')">'+(editing?'정정 저장':'수정')+'</button></div>' : '';
   return '<div class="ans">'+
-    '<div class="ans-top"><div class="who">저장된 답변</div>'+cat+(edited?'<span class="edited-badge">수정본</span>':'')+'<span class="time">'+esc(stamp)+'</span></div>'+
+    '<div class="ans-top"><div class="who">저장된 답변</div>'+cat+(edited?'<span class="edited-badge">수정본</span>':'')+
+      (correcting?'<span class="status approved"><span class="spinner"></span>정정 저장 중…</span>':'<span class="time">'+esc(stamp)+'</span>')+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
     '<div class="draft"><div class="who">'+esc(whoLbl)+'</div><div class="reply">'+esc(claraShown||'—')+'</div>'+
-      (showGuest?'<div class="gloss gloss-send">'+esc(guestShown)+'</div>':(guestShown&&!showGuest?'':''))+
+      (showGuest?'<div class="gloss gloss-send">'+esc(guestShown)+'</div>':'')+
       (gImgs.length?thumbsHtml(gImgs):'')+'</div>'+
+    editArea+
     '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+
       [1,2,3,4,5].map(i=>'<span class="tcell'+(i<=score?' f':'')+'"></span>').join('')+'</div>'+
       '<span class="tnote">'+(score?score+'/5':'미평가')+'</span></div>'+
+    editBtn+
   '</div>';
 }
 function sentSimple(id,d){
@@ -643,13 +672,17 @@ function approveDraft(id){
   if(!d || d.status!=='pending'){ toast('이미 처리된 초안입니다'); return; } // 이중 조작 방지
   // 학습모드=발송 없음(되돌릴 수 있음)이라 컨펌 불필요 / 실발송 모드만 확인 다이얼로그.
   if(!learnMode && !confirm('게스트에게 발송할까요?')) return;
-  // A안: 클라라 확정본은 편집 언어(한국어/영어). 게스트 언어 발송본은 GAS가 무료 번역해 채움.
-  const base=editSourceText(d);
-  const final=(editingIds.has(id)&&edits[id]!=null)?edits[id]:base;
-  const edited=final.trim()!==base.trim();
+  // A안+2단계: 확정 답변만 사용(편집창 열린 채면 현재값 자동확정 → [저장] 안 눌러도 편집 유실 없음).
+  //   AI 초안이 편집본을 덮는 경로 제거: committedEdit/현재 편집값이 있으면 그것, 없으면(편집 안 함) AI 초안.
+  const aiBase=editSourceText(d);
+  let final;
+  if(editingIds.has(id)&&edits[id]!=null) final=edits[id];
+  else if(committedEdit[id]!=null) final=committedEdit[id];
+  else final=aiBase;
+  const edited=final.trim()!==aiBase.trim();
   const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
   update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:editSourceLang(d),editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; delete selfScores[id];
+    .then(()=>{ editingIds.delete(id); delete edits[id]; delete committedEdit[id]; delete selfScores[id];
       if(learnMode){ optimisticSaved.add(id); triggerImmediateSave(id); renderWait(); renderSent(); } // (2) 즉시 '저장됨' 표시 + 백그라운드 저장
       toast(learnMode?(edited?'수정본 저장됨(학습)':'저장됨(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
     .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
@@ -714,12 +747,31 @@ function bulkDismiss(){
 // 편집 기준 언어(A안): 영어 게스트=영어(reply) / 그 외=한국어(replyKo). 클라라는 한/영만 만짐.
 function editSourceText(d){ return (String((d&&d.lang)||'').toLowerCase()==='en') ? String((d&&d.reply)||'') : String((d&&d.replyKo)||(d&&d.reply)||''); }
 function editSourceLang(d){ return (String((d&&d.lang)||'').toLowerCase()==='en') ? 'en' : 'ko'; }
-function toggleEdit(id){
-  if(editingIds.has(id)) editingIds.delete(id);
-  else { editingIds.add(id); if(edits[id]==null) edits[id]=editSourceText(drafts[id]); }
+// (1) 2단계: [수정]=편집창 열기 / [저장]=현재 편집값을 committedEdit에 확정(편집창 닫힘). 승인은 committedEdit만 사용.
+function editOrSave(id){
+  if(editingIds.has(id)){ // [저장]
+    committedEdit[id]=(edits[id]!=null)?edits[id]:(committedEdit[id]!=null?committedEdit[id]:editSourceText(drafts[id]));
+    editingIds.delete(id); delete edits[id];
+    toast('편집 확정 — [승인]을 누르면 이 답변으로 학습');
+  } else { // [수정]
+    editingIds.add(id);
+    if(edits[id]==null) edits[id]=(committedEdit[id]!=null)?committedEdit[id]:editSourceText(drafts[id]);
+  }
   renderWait();
 }
 function editInput(id,val){ edits[id]=val; } // 재렌더 안 함 → 포커스 유지
+// (2) 학습됨 재편집: [수정]=열기 / [저장]=정정 커밋(같은 코퍼스 행 갱신 요청).
+function editOrSaveCorrection(id){
+  if(editingIds.has(id)) saveCorrection(id);
+  else { editingIds.add(id); if(edits[id]==null) edits[id]=String((drafts[id]||{}).claraFinal||editSourceText(drafts[id])); renderSent(); }
+}
+function saveCorrection(id){
+  const d=drafts[id]; if(!d) return;
+  const final=(edits[id]!=null)?edits[id]:String(d.claraFinal||editSourceText(d));
+  update(ref(db,'cs/drafts/'+id),{claraFinal:final,claraFinalLang:editSourceLang(d),editedByClara:true,pendingCorrection:true,saveError:null})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; triggerImmediateSave(id); toast('정정 저장 중… (같은 학습 행 갱신)'); renderSent(); })
+    .catch(e=>toast('정정 실패: 쓰기 권한 확인'));
+}
 
 function renderAuto(){
   const stag=document.querySelector('.stage-tag'); if(stag) stag.textContent=learnMode?'학습모드':'M2b·2';
@@ -781,7 +833,8 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 
 // onclick 핸들러 노출 (module 스코프)
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
-window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
+window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.editInput=editInput;
+window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
 window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup;
 </script>
