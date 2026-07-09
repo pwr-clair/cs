@@ -116,6 +116,8 @@ button{font-family:inherit;}
 .reply{font-size:13px;white-space:pre-line;}
 .gloss{font-size:11px;color:var(--muted);white-space:pre-line;margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
 .gloss::before{content:'번역';display:block;font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:3px;}
+.gloss.gloss-send::before{content:'게스트 언어 발송본';}
+.edit-hint{font-size:9.5px;color:var(--night);margin:8px 0 3px;font-weight:600;}
 .thumbwrap{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);}
 .thumblab{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:5px;}
 .thumbs{display:flex;gap:7px;flex-wrap:wrap;}
@@ -427,7 +429,7 @@ function answerBody(id,d){
   const replyShown=imgs.length?stripImgs(d.reply):String(d.reply||'');
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
   const editing=editingIds.has(id);
-  const editVal=(edits[id]!=null)?edits[id]:String(d.reply||'');
+  const editVal=(edits[id]!=null)?edits[id]:editSourceText(d); // 편집창 = 한국어(비영어) / 영어(영어권)
   const saveFailed=(learnMode && st==='approved' && d.saveError);
 
   let right;
@@ -453,8 +455,9 @@ function answerBody(id,d){
   } else {
     actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — 학습 시트에 저장 중(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
   }
+  const editLangLbl=(editSourceLang(d)==='ko')?'한국어로 편집 — 저장 시 게스트 언어로 자동 번역':'영어로 편집';
   const editArea=(st==='pending'&&editing)
-    ? '<textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
+    ? '<div class="edit-hint">'+editLangLbl+'</div><textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
 
   return '<div class="ans">'+
     '<div class="ans-top"><div class="who">답할 문의</div>'+cat+right+'</div>'+
@@ -557,21 +560,26 @@ function renderSent(){
     return '<div class="card grp">'+groupHeader(g,latest[1])+body+'</div>';
   }).join('');
 }
-// (3) 학습됨 저장분 상세(원문 + 최종 저장 텍스트/수정본 + 번역 + 자기평가), 읽기전용. 그룹헤더가 게스트/숙박 담당.
+// (3) 학습됨 저장분 상세: 원문 + 클라라 확정 편집본(=코퍼스 원본, 한국어/영어) + 게스트 언어 발송본 + 자기평가.
 function sentDetail(id,d){
-  const final=String(d.finalReply||d.reply||'');
-  const imgs=extractImgs(final);
-  const shown=(imgs.length?stripImgs(final):final).trim();
+  const editLang=d.claraFinalLang||((String(d.lang||'').toLowerCase()==='en')?'en':'ko');
+  const claraFinal=String(d.claraFinal||d.finalReplyKo||d.replyKo||d.finalReply||d.reply||'');
+  const guestSend=String(d.finalReply||d.reply||'');
+  const claraShown=(extractImgs(claraFinal).length?stripImgs(claraFinal):claraFinal).trim();
+  const gImgs=extractImgs(guestSend);
+  const guestShown=(gImgs.length?stripImgs(guestSend):guestSend).trim();
   const edited=!!d.editedByClara;
-  const whoLbl=edited?'내 답변 · 수정본':'학습된 말투';
+  const whoLbl=(edited?'내 답변 · 수정본':'학습된 말투')+' · '+(editLang==='ko'?'한국어(학습 원본)':'영어(학습 원본)');
   const stamp=d.savedAt?(fmtKST(d.savedAt)+' 저장'):'저장 중…';
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
   const score=(d.claraToneScore!=null&&d.claraToneScore>0)?d.claraToneScore:0;
+  const showGuest = editLang!==String(d.lang||'').toLowerCase() && guestShown && guestShown!==claraShown;
   return '<div class="ans">'+
     '<div class="ans-top"><div class="who">저장된 답변</div>'+cat+(edited?'<span class="edited-badge">수정본</span>':'')+'<span class="time">'+esc(stamp)+'</span></div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    '<div class="draft"><div class="who">'+esc(whoLbl)+'</div><div class="reply">'+esc(shown||'—')+'</div>'+
-      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+(imgs.length?thumbsHtml(imgs):'')+'</div>'+
+    '<div class="draft"><div class="who">'+esc(whoLbl)+'</div><div class="reply">'+esc(claraShown||'—')+'</div>'+
+      (showGuest?'<div class="gloss gloss-send">'+esc(guestShown)+'</div>':(guestShown&&!showGuest?'':''))+
+      (gImgs.length?thumbsHtml(gImgs):'')+'</div>'+
     '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+
       [1,2,3,4,5].map(i=>'<span class="tcell'+(i<=score?' f':'')+'"></span>').join('')+'</div>'+
       '<span class="tnote">'+(score?score+'/5':'미평가')+'</span></div>'+
@@ -635,11 +643,12 @@ function approveDraft(id){
   if(!d || d.status!=='pending'){ toast('이미 처리된 초안입니다'); return; } // 이중 조작 방지
   // 학습모드=발송 없음(되돌릴 수 있음)이라 컨펌 불필요 / 실발송 모드만 확인 다이얼로그.
   if(!learnMode && !confirm('게스트에게 발송할까요?')) return;
-  const base=String(d.reply||'');
+  // A안: 클라라 확정본은 편집 언어(한국어/영어). 게스트 언어 발송본은 GAS가 무료 번역해 채움.
+  const base=editSourceText(d);
   const final=(editingIds.has(id)&&edits[id]!=null)?edits[id]:base;
   const edited=final.trim()!==base.trim();
   const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
-  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
+  update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:editSourceLang(d),editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; delete selfScores[id];
       if(learnMode){ optimisticSaved.add(id); triggerImmediateSave(id); renderWait(); renderSent(); } // (2) 즉시 '저장됨' 표시 + 백그라운드 저장
       toast(learnMode?(edited?'수정본 저장됨(학습)':'저장됨(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
@@ -702,9 +711,12 @@ function bulkDismiss(){
   ]).then(()=>toast(ids.length+'건 분류·정리 완료 ('+categories.length+'개 분류)'))
     .catch(e=>toast('정리 실패: 쓰기 권한 확인'));
 }
+// 편집 기준 언어(A안): 영어 게스트=영어(reply) / 그 외=한국어(replyKo). 클라라는 한/영만 만짐.
+function editSourceText(d){ return (String((d&&d.lang)||'').toLowerCase()==='en') ? String((d&&d.reply)||'') : String((d&&d.replyKo)||(d&&d.reply)||''); }
+function editSourceLang(d){ return (String((d&&d.lang)||'').toLowerCase()==='en') ? 'en' : 'ko'; }
 function toggleEdit(id){
   if(editingIds.has(id)) editingIds.delete(id);
-  else { editingIds.add(id); if(edits[id]==null) edits[id]=String((drafts[id]||{}).reply||''); }
+  else { editingIds.add(id); if(edits[id]==null) edits[id]=editSourceText(drafts[id]); }
   renderWait();
 }
 function editInput(id,val){ edits[id]=val; } // 재렌더 안 함 → 포커스 유지

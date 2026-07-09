@@ -275,7 +275,7 @@ function sendApprovedDrafts() {
       continue;
     }
     var threadId = fresh.threadId || (fbGet('cs/inbox/' + id) || {}).threadId;
-    var finalReply = fresh.finalReply || fresh.editedReply || fresh.reply || '';
+    var finalReply = resolveGuestFinal_(fresh) || fresh.finalReply || fresh.reply || ''; // 클라라 편집(한국어)→게스트 언어 발송본(무료)
     if (!threadId) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'threadId 없음 — 발송 불가' }); continue; }
     if (!finalReply) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'finalReply 비어있음' }); continue; }
 
@@ -324,6 +324,23 @@ function ensureSelfScoreHeader_(sheet) {
   var h = sheet.getRange(1, 5).getValue();
   if (String(h).trim() !== 'clara_self_score') sheet.getRange(1, 5).setValue('clara_self_score');
 }
+// ── 편집 기준 언어(A안) → 게스트 언어 발송본 (무료 LanguageApp, Claude 미사용) ──
+//   클라라는 비영어권=한국어(replyKo), 영어권=영어(reply)로 편집(claraFinal/claraFinalLang).
+//   발송본: 게스트 언어==편집 언어면 그대로 / 미편집이면 Claude 원문(reply, 이미 게스트 언어) /
+//           편집됐고 언어 다르면 LanguageApp 번역. 타깃 코드 불명(guessLang_의 'eu' 등)이면 원문 폴백.
+function langToIso_(l) { var M = { en:'en', ko:'ko', ja:'ja', zh:'zh', ru:'ru', th:'th' }; return M[String(l||'').toLowerCase()] || null; }
+function resolveGuestFinal_(d) {
+  var editLang = d.claraFinalLang || (String(d.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
+  var claraFinal = String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '');
+  var guestLang = String(d.lang || 'en').toLowerCase();
+  if (guestLang === editLang) return claraFinal;          // ko게스트+ko편집 / en게스트+en편집 → 그대로
+  if (!d.editedByClara) return d.reply || claraFinal;      // 미편집 → Claude 원문(이미 게스트 언어)
+  var iso = langToIso_(guestLang);
+  if (!iso) return d.reply || claraFinal;                  // 타깃 코드 불명(eu 등) → 원문 폴백(발송 전 재확인 필요)
+  try { return LanguageApp.translate(claraFinal, editLang, iso); } // 무료 번역
+  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + iso + '): ' + e); return d.reply || claraFinal; }
+}
+
 function saveApprovedToSheet_() {
   if (!learnModeOn_()) return;               // 실발송 모드(8월)면 저장 워커 비활성
   // 스크립트 락: 즉시저장(doPost)과 5분 폴링(pollCsInbox)이 동시에 돌아도 이중 append 방지.
@@ -344,11 +361,12 @@ function saveApprovedToSheet_() {
     for (var k = 0; k < targets.length; k++) {
       var dd = targets[k][1];
       var q = String(dd.origMsg || '').trim();
-      var ans = String(dd.finalReply || dd.editedReply || dd.reply || '').trim();
-      var lang = dd.lang || guessLang_(ans || q);
+      // 코퍼스 clara_reply = 클라라가 확정한 편집본(비영어권=한국어, 영어권=영어) — 기계번역 아닌 클라라 원문.
+      var claraFinal = String(dd.claraFinal || dd.finalReply || dd.replyKo || dd.reply || '').trim();
+      var lang = dd.lang || guessLang_(claraFinal || q); // 상황(게스트) 언어 — 검색용
       var cat = dd.category || '';
       var score = (dd.claraToneScore != null && dd.claraToneScore !== 0) ? dd.claraToneScore : ''; // 미평가는 빈칸
-      rows.push([lang, q, ans, cat, score]);
+      rows.push([lang, q, claraFinal, cat, score]);
     }
 
     var now = new Date().toISOString();
@@ -370,14 +388,17 @@ function saveApprovedToSheet_() {
       return;
     }
 
-    // 성공 → saved 마킹 + saveError 클리어.
+    // 성공 → saved 마킹 + saveError 클리어 + 게스트 언어 발송본(무료 번역) 보관.
     var patch = {};
     for (var m = 0; m < targets.length; m++) {
-      var sid = targets[m][0];
+      var sid = targets[m][0], dm = targets[m][1];
+      var editLang = dm.claraFinalLang || (String(dm.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
       patch[sid + '/status'] = 'saved';
       patch[sid + '/savedToSheet'] = true;
       patch[sid + '/savedAt'] = now;
       patch[sid + '/saveError'] = null;
+      patch[sid + '/finalReply'] = resolveGuestFinal_(dm);   // 게스트 언어 발송본(발송 대비)
+      patch[sid + '/finalReplyKo'] = (editLang === 'ko') ? (dm.claraFinal || dm.replyKo || null) : (dm.replyKo || null); // 한국어 표시본
     }
     fbUpdate('cs/drafts', patch);
     Logger.log('학습 저장: ' + rows.length + '건 시트 append + status=saved');
