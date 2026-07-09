@@ -457,11 +457,11 @@ function correctSavedRows_() {
 //   보안: 처리 대상은 '이미 승인된(approved) draft'뿐 — 게스트 발송 없음·멱등·락 보호. 시크릿 불필요(레포에 시크릿 금지).
 //   배포(Clara 1회): 배포 → 새 배포 → 웹앱 / 실행=본인(paradisewalkresidence) / 액세스=모든 사용자 → 배포 후 publishSaveHookUrl 실행.
 function doPost(e) {
-  try { saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok'); }
-  catch (err) { Logger.log('doPost 저장 실패: ' + err); return ContentService.createTextOutput('err:' + err); }
+  try { processManualQueue_(); saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok'); }
+  catch (err) { Logger.log('doPost 처리 실패: ' + err); return ContentService.createTextOutput('err:' + err); }
 }
 function doGet(e) { // 브라우저 수동 점검용(같은 동작)
-  try { saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok(get)'); }
+  try { processManualQueue_(); saveApprovedToSheet_(); correctSavedRows_(); return ContentService.createTextOutput('ok(get)'); }
   catch (err) { return ContentService.createTextOutput('err:' + err); }
 }
 // 배포 후 1회 실행: 현재 웹앱 배포 URL을 cs/config/saveHookUrl 에 등록 → DESK가 자동으로 읽어 즉시저장 호출.
@@ -523,6 +523,8 @@ function pollCsInbox() {
   }
   if (cutoffSkipped) Logger.log('컷오프 이전 — 초안 스킵: ' + cutoffSkipped + '건');
 
+  // 즉석 답변 생성기 백업 경로(주 경로는 doPost 즉시). Claude 사용 → 게이트 이후.
+  try { processManualQueue_(); } catch (e) { Logger.log('즉석 생성 큐 실패: ' + e); }
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   safeDrafts_();
   // autoSend: ON & confidence>=0.8 → 자동 승인 (Firebase만, Gmail 미사용)
@@ -894,15 +896,91 @@ var CLARA_SYSTEM =
 function processInboxToDrafts() {
   var inbox = fbGet('cs/inbox'); if (!inbox) return;
   var drafts = fbGet('cs/drafts') || {};
-  var ids = Object.keys(inbox), made = 0;
+  var handled = fbGet('cs/handledManual') || {}; // 즉석 처리 기록(본문 매칭 중복제거)
+  var ids = Object.keys(inbox), made = 0, dup = 0;
   for (var i = 0; i < ids.length && made < DRAFT_BATCH; i++) {
     var id = ids[i], rec = inbox[id];
     if (!rec || rec.parseFailed) continue; // 파싱 실패건은 초안 생략(수동 처리)
     if (drafts[id]) continue;              // 이미 초안 있음(멱등)
+    var msgText = (rec.parsed && rec.parsed.message) || '';
+    if (msgText && isDuplicateOfManual_(msgText, handled)) { // 즉석 처리한 것과 동일 → 대기에 안 띄움(Claude 호출 없음)
+      fbSet('cs/drafts/' + id, {
+        status: 'dismissed', handledManual: true, origin: 'polling-dup',
+        guest: rec.guest || null, bookingId: rec.bookingId || null, channel: rec.source || null,
+        origMsg: msgText, lang: rec.lang || 'en', receivedAt: rec.receivedAt || null,
+        dismissedAt: new Date().toISOString(), createdAt: new Date().toISOString()
+      });
+      drafts[id] = true; dup++; continue;
+    }
     try { makeDraftFor_(id, rec, inbox, drafts); made++; } // (1)(4) 같은 run의 inbox·drafts 맵 전달(추가 fetch 없음)
     catch (e) { Logger.log('draft 실패 ' + id + ': ' + e); }
   }
   if (made) Logger.log('drafts 생성: ' + made + '건');
+  if (dup) Logger.log('즉석 처리 중복 제외: ' + dup + '건 (대기 미표시·기록 보존)');
+}
+
+// ── 본문 매칭 중복제거(b) : 정규화 + Jaccard. 오탐(다른 문의 숨김) 방지 위해 높은 임계 + 짧은 텍스트 제외. ──
+function normText_(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .replace(/https?:\/\/\S+/g, ' ')                 // URL 제거
+    .replace(/[^0-9a-z가-힣぀-ヿ一-鿿\s]/gi, ' ') // 문장부호·기호 제거(영/한/일/중 유지)
+    .replace(/\s+/g, ' ').trim();
+}
+function jaccard_(a, b) {
+  var sa = {}, sb = {}, na = 0, nb = 0, w;
+  a.split(' ').forEach(function (x) { if (x && !sa[x]) { sa[x] = 1; na++; } });
+  b.split(' ').forEach(function (x) { if (x && !sb[x]) { sb[x] = 1; nb++; } });
+  if (!na || !nb) return 0;
+  var inter = 0; for (w in sa) if (sb[w]) inter++;
+  return inter / (na + nb - inter);
+}
+// text가 이미 즉석 처리된 본문과 같은지. 순수(테스트용): handled 맵을 인자로 받음.
+function isDuplicateOfManual_(text, handled) {
+  var norm = normText_(text);
+  if (!norm || norm.length < 8) return false;        // 너무 짧으면 판정 안 함(오탐 방지 → 정상 대기)
+  for (var k in handled) {
+    var h = handled[k]; if (!h || !h.norm) continue;
+    if (h.norm === norm) return true;                 // 완전 일치
+    if (norm.length >= 20 && jaccard_(norm, h.norm) >= 0.9) return true; // 충분히 높을 때만
+  }
+  return false;
+}
+
+// ── 즉석 답변 생성기(수동 큐) : DESK가 cs/manualQueue에 붙여넣기 요청 → 여기서 Claude 1회 생성 → cs/drafts ──
+//   doPost(즉시)·pollCsInbox(백업) 둘 다 호출. Claude urlfetch 사용(생성이라 불가피, 문의당 1회).
+function processManualQueue_() {
+  var q = fbGet('cs/manualQueue'); if (!q) return;
+  var ids = Object.keys(q);
+  for (var i = 0; i < ids.length; i++) {
+    var rid = ids[i], item = q[rid];
+    if (!item || item.status !== 'pending') continue;
+    var text = String(item.text || '').trim();
+    if (!text) { fbUpdate('cs/manualQueue/' + rid, { status: 'error', error: '빈 메시지' }); continue; }
+    try {
+      makeManualDraft_(rid, text);                    // Claude 1회 → cs/drafts + handledManual
+      fbUpdate('cs/manualQueue/' + rid, { status: 'done', doneAt: new Date().toISOString() });
+    } catch (e) {
+      fbUpdate('cs/manualQueue/' + rid, { status: 'error', error: String(e).slice(0, 180) });
+      Logger.log('즉석 생성 실패 ' + rid + ': ' + e);
+    }
+  }
+}
+function makeManualDraft_(rid, text) {
+  var inboxLike = { parsed: { message: text }, lang: guessLang_(text), bookingId: null, guest: null,
+                    source: 'manual', emailReply: false, receivedAt: new Date().toISOString(), raw: { body: text } };
+  var examples = retrieveExamples_(inboxLike);
+  var d = claudeDraft_(inboxLike, examples, '');       // 기존 초안 생성 로직 재사용(코퍼스 few-shot), 호출 1회
+  var manualId = 'manual_' + rid;
+  fbSet('cs/drafts/' + manualId, {
+    reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
+    status: 'pending', editedReply: null, lang: inboxLike.lang, guest: null, bookingId: null,
+    channel: 'manual', origin: 'manual', origMsg: text,
+    receivedAt: inboxLike.receivedAt, createdAt: new Date().toISOString(),
+    model: CLAUDE_MODEL, examplesUsed: examples.length
+  });
+  saveTaskCandidates_(manualId, d.tasks, { room: null, bookingId: null, guest: null, lang: inboxLike.lang });
+  var norm = normText_(text);                          // 중복제거 기록
+  if (norm) fbSet('cs/handledManual/' + manualId, { norm: norm, ts: new Date().toISOString(), src: 'manual' });
 }
 
 // (1) 같은 예약의 이전 대화 이력 → 프롬프트용 트랜스크립트(추가 Claude 호출 없음).

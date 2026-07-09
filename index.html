@@ -83,6 +83,16 @@ button{font-family:inherit;}
 .sw.on .lab{left:9px;right:auto;color:#D6F0E2;}
 .sw:focus-visible{outline:2px solid var(--night);outline-offset:2px;}
 .auto-hint{font-size:9.5px;color:var(--muted);margin:0 2px 14px;}
+/* 즉석 답변 생성기 */
+.gen{background:var(--card);border:1px solid var(--night);border-radius:var(--r);padding:11px 12px;margin-bottom:12px;box-shadow:0 0 0 2px var(--night-soft);}
+.gen-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.gen-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--night);}
+.gen-sub{font-size:9.5px;color:var(--muted);}
+.gen-box{width:100%;border:1px solid var(--line);border-radius:var(--rs);padding:9px 10px;font-family:inherit;font-size:13px;background:var(--paper);color:var(--ink);min-height:64px;resize:vertical;margin-bottom:8px;}
+.gen-box:focus{outline:2px solid var(--night);outline-offset:1px;}
+.gen-btn{width:100%;padding:10px;border-radius:var(--rs);border:1px solid var(--night);background:var(--night);color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
+.gen-btn:active{transform:scale(.99);}
+.gen-btn:disabled{opacity:.5;cursor:not-allowed;}
 
 .tabs{display:flex;gap:4px;margin-bottom:12px;}
 .tab{flex:1;text-align:center;padding:8px 0;border-radius:var(--rs);border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
@@ -255,6 +265,13 @@ button{font-family:inherit;}
   </div>
   <div class="auto-hint">ON = 새 초안 중 <b>confidence 0.8 이상</b>만 자동 발송(그 미만은 대기) · OFF = 전건 승인 · 저장 위치 <code style="font-family:var(--mono)">cs/config/autoSend</code></div>
 
+  <!-- 즉석 답변 생성기: 익스트라넷 메시지 붙여넣기 → 폴링 대기 없이 즉시 초안 -->
+  <div class="gen">
+    <div class="gen-head"><span class="gen-title">⚡ 즉석 답변 생성</span><span class="gen-sub" id="genStatus">게스트 메시지를 붙여넣으면 바로 초안이 대기에 올라옵니다</span></div>
+    <textarea class="gen-box" id="genBox" placeholder="익스트라넷의 게스트 메시지를 붙여넣기…"></textarea>
+    <button class="gen-btn" id="genBtn" onclick="generateInstant()">답변 생성</button>
+  </div>
+
   <div class="tabs">
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
     <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">—</span></button>
@@ -315,6 +332,7 @@ let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
 let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
+let manualQueue={}; // cs/manualQueue (즉석 생성 요청 상태)
 let edits={}, editingIds=new Set(); // 인라인 수정 버퍼(편집창 열림 동안)
 let committedEdit={}; // [저장]으로 확정한 편집본(승인이 이 값만 사용 → AI 초안 덮임 원천 차단)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
@@ -362,11 +380,12 @@ function startListeners(){
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
   onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
+  onValue(ref(db,'cs/manualQueue'), snap=>{ manualQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderGenStatus(); }, permErr('cs/manualQueue'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderSent(); renderTasks(); renderAuto(); renderBudget(); }
+function renderAll(){ renderWait(); renderSent(); renderTasks(); renderAuto(); renderBudget(); renderGenStatus(); }
 // (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
 function reconcileOptimistic(){
   optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
@@ -405,7 +424,7 @@ function buildGroups(entries){
   arr.forEach(g=>{ g.items.sort((a,b)=>msgTimeMs(a[1])-msgTimeMs(b[1])); g.latest=g.items[g.items.length-1]; }); // 시간순(오래된→최신)
   return arr;
 }
-const CHAN_LABEL={booking:'Booking',agoda:'Agoda',expedia:'Expedia'};
+const CHAN_LABEL={booking:'Booking',agoda:'Agoda',expedia:'Expedia',manual:'즉석'};
 function platformBadge(d){ const c=d&&d.channel; return c?'<span class="chan">'+esc(CHAN_LABEL[c]||c)+'</span>':''; }
 // 그룹 헤더: 게스트 · 플랫폼 · 방 · 숙박일자 · [대화 N] · 펼침 토글.
 //   opts.always=true면 N==1이어도 토글 노출(학습됨: 접힘=헤더만). opts.collapsedLabel/expandedLabel로 문구.
@@ -666,6 +685,26 @@ function rejectTask(id){ update(ref(db,'cs/tasks/'+id),{status:'rejected',reject
 function toggleTaskDone(id){ const cur=(tasks[id]||{}).status; const next=cur==='done'?'active':'done';
   update(ref(db,'cs/tasks/'+id),{status:next,doneAt:next==='done'?new Date().toISOString():null}).then(()=>toast(next==='done'?'완료 처리':'진행으로 되돌림')).catch(e=>toast('실패: 쓰기 권한')); }
 
+// ── 즉석 답변 생성기 (cs/manualQueue → GAS Claude 1회 → cs/drafts 대기) ──
+function generateInstant(){
+  const box=document.getElementById('genBox'); const text=(box&&box.value||'').trim();
+  if(!text){ toast('메시지를 붙여넣으세요'); return; }
+  const reqId='mq_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+  const btn=document.getElementById('genBtn'); if(btn) btn.disabled=true;
+  set(ref(db,'cs/manualQueue/'+reqId),{text:text,status:'pending',createdAt:new Date().toISOString()})
+    .then(()=>{ box.value=''; triggerImmediateSave(reqId); toast('생성 중… 곧 대기에 표시됩니다'); if(btn) btn.disabled=false; })
+    .catch(e=>{ toast('요청 실패: 쓰기 권한 확인'); if(btn) btn.disabled=false; });
+}
+function renderGenStatus(){
+  const el=document.getElementById('genStatus'); if(!el) return;
+  const vals=Object.keys(manualQueue||{}).map(k=>manualQueue[k]).filter(Boolean);
+  const pending=vals.filter(v=>v.status==='pending').length;
+  const errs=vals.filter(v=>v.status==='error');
+  if(pending) el.textContent='생성 중 '+pending+'건… 대기 탭에 곧 표시';
+  else if(errs.length) el.textContent='⚠ 최근 생성 실패: '+(errs[errs.length-1].error||'오류');
+  else el.textContent='게스트 메시지를 붙여넣으면 바로 초안이 대기에 올라옵니다';
+}
+
 // ── 승인/수정/발송 (쓰기 지점: cs/drafts/{id} 만) ──
 function approveDraft(id){
   const d=drafts[id];
@@ -836,7 +875,7 @@ window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; wind
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.editInput=editInput;
 window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
-window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup;
+window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant;
 </script>
 </body>
 </html>
