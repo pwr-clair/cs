@@ -115,7 +115,7 @@ button{font-family:inherit;}
 .draft .who b{color:var(--go);}
 .reply{font-size:13px;white-space:pre-line;}
 .gloss{font-size:11px;color:var(--muted);white-space:pre-line;margin-top:8px;padding-top:7px;border-top:1px dashed var(--line);}
-.gloss::before{content:'KO 대역';display:block;font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:3px;}
+.gloss::before{content:'번역';display:block;font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:3px;}
 .thumbwrap{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);}
 .thumblab{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:var(--muted);margin-bottom:5px;}
 .thumbs{display:flex;gap:7px;flex-wrap:wrap;}
@@ -129,6 +129,15 @@ button{font-family:inherit;}
 .conf .d.f{background:var(--go);}
 .conf.low .d.f{background:var(--amber);}
 .conf .note{font-size:9px;color:var(--muted);}
+/* 말투 일치 — 클라라 자기평가(수동 탭, 기본 빈칸). AI confidence와 무관. */
+.tone{display:flex;align-items:center;gap:8px;margin-bottom:11px;flex-wrap:wrap;}
+.tone .tlbl{font-size:9.5px;color:var(--ink2);}
+.tone .tcells{display:flex;gap:4px;}
+.tone .tcell{width:20px;height:16px;border-radius:5px;border:1px solid var(--line);background:var(--paper);cursor:pointer;transition:.12s;}
+.tone .tcell:hover{border-color:var(--night);}
+.tone .tcell.f{background:var(--night);border-color:var(--night);}
+.tone .tnote{font-size:9px;color:var(--muted);}
+.sw.locked{opacity:.55;cursor:not-allowed;}
 .btns{display:flex;gap:7px;}
 .b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
 .b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
@@ -216,7 +225,7 @@ button{font-family:inherit;}
     <button class="tab" onclick="showTab(1,this)">업무<span class="n">—</span></button>
     <button class="tab" onclick="showTab(2,this)">제안<span class="n">—</span></button>
     <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
-    <button class="tab" onclick="showTab(4,this)">보냄<span class="n" id="tSent">—</span></button>
+    <button class="tab" onclick="showTab(4,this)"><span id="tSentLbl">보냄</span><span class="n" id="tSent">—</span></button>
   </div>
 
   <!-- 대기 (실데이터 cs/drafts pending) -->
@@ -233,8 +242,8 @@ button{font-family:inherit;}
   <div class="pane" id="p4"><div id="sentList"></div></div>
 
   <div class="footnote">
-    M2b-2 · 승인·수정·발송 활성 — 승인 시 GAS가 원 스레드에 회신 발송<br>
-    Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱 · 쓰기 허용은 자동발송 토글 하나뿐
+    7월 학습 모드 · 승인 시 게스트 발송 없이 CS-DB 시트에 학습 저장 (실발송 8월 복귀)<br>
+    Gmail → GAS(PWR-CS-Engine) → <code>cs/*</code> → 이 앱
   </div>
 
 </div></div>
@@ -265,8 +274,9 @@ setPersistence(auth, browserLocalPersistence).catch(()=>{});
 const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local';
 
 let isLoggedIn=false, currentUser=null, listenersStarted=false;
-let drafts={}, auto=false, budgetData=null;
+let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
 let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
+let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
 
 // ── 로그인 ──
 async function doLogin(){
@@ -306,6 +316,7 @@ function startListeners(){
   const permErr = (path)=> (e)=>{ toast('읽기 권한 오류: '+path+' — Firebase 규칙 확인'); };
   onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
+  onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
@@ -323,14 +334,16 @@ function thumbsHtml(urls){
     urls.map(u=>'<a class="thumb" href="'+esc(u)+'" target="_blank" rel="noopener"><img src="'+esc(u)+'" alt="" loading="lazy"><span>'+esc(imgLabel(u))+'</span></a>').join('')+
     '</div></div>';
 }
-function confDots(c){
-  const has = typeof c==='number' && isFinite(c);
-  const n = has ? Math.max(0,Math.min(5,Math.round(c*5))) : 0;
-  let dots=''; for(let i=0;i<5;i++) dots+='<span class="d'+(i<n?' f':'')+'"></span>';
-  const cls = has && c<0.5 ? ' low' : '';
-  const note = has ? '' : '<span class="note">confidence —</span>';
-  return '<div class="conf'+cls+'"><span class="lbl">말투 일치</span><div class="dots">'+dots+'</div>'+note+'</div>';
+// 말투 일치 = 클라라 자기평가(수동 탭, 기본 빈칸). AI confidence 자동채점 제거.
+//   이 값은 학습신호로 승인 시 시트 E열에 기록되며, autoSend의 machine confidence와 무관.
+function toneScoreRow(id){
+  const cur = selfScores[id]!=null ? selfScores[id] : 0; // 0 = 미평가(빈칸)
+  let cells='';
+  for(let i=1;i<=5;i++) cells+='<span class="tcell'+(i<=cur?' f':'')+'" onclick="setTone(\''+id+'\','+i+')" title="말투 일치 '+i+'/5"></span>';
+  const note = cur ? '<span class="tnote">'+cur+'/5</span>' : '<span class="tnote">미평가 — 탭해서 점수</span>';
+  return '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+cells+'</div>'+note+'</div>';
 }
+function setTone(id,n){ selfScores[id] = (selfScores[id]===n ? 0 : n); renderWait(); } // 같은 칸 재탭 = 해제
 
 function draftCard(id,d){
   const st=d.status||'pending';
@@ -342,7 +355,7 @@ function draftCard(id,d){
   const editVal=(edits[id]!=null)?edits[id]:baseReply;
 
   let right;
-  if(st==='approved') right='<span class="status approved"><span class="spinner"></span>발송 대기중</span>';
+  if(st==='approved') right='<span class="status approved"><span class="spinner"></span>'+(learnMode?'저장 대기중':'발송 대기중')+'</span>';
   else if(st==='sending') right='<span class="status sending"><span class="spinner"></span>발송 중</span>';
   else if(st==='error') right='<span class="status error">발송 실패</span>';
   else right='<span class="time">'+esc(fmtKST(d.receivedAt||d.createdAt))+' 도착</span>';
@@ -351,14 +364,14 @@ function draftCard(id,d){
   if(st==='pending'){
     actions='<div class="btns">'+
       '<button class="b" onclick="toggleEdit(\''+id+'\')">'+(editing?'편집 닫기':'수정')+'</button>'+
-      '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존·발송 안 됨)">지난 문의</button>'+
-      '<button class="b go" onclick="approveDraft(\''+id+'\')">승인 · 발송</button>'+
+      '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>'+
+      '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인 · 저장':'승인 · 발송')+'</button>'+
     '</div>';
   } else if(st==='error'){
     actions='<div class="err-row"><div class="errmsg">'+esc(d.errorMsg||'발송 오류')+'</div>'+
       '<button class="b go" onclick="retryDraft(\''+id+'\')">재시도</button></div>';
   } else {
-    actions='<div class="readonly-note">'+(st==='approved'?'승인됨 — GAS가 원 스레드에 발송합니다':'발송 처리 중…')+'</div>';
+    actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — GAS가 학습 시트에 저장합니다(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
   }
   const editArea=(st==='pending'&&editing)
     ? '<textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
@@ -366,18 +379,22 @@ function draftCard(id,d){
   return '<div class="card">'+
     '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
       '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+right+'</div>'+
-    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · 예약 '+esc(d.bookingId||'—')+'</div>'+
+    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · '+esc(stayLabel(d))+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    '<div class="draft"><div class="who">초안 · <b>클라라 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
+    '<div class="draft"><div class="who">초안 · <b>학습된 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
       '<div class="reply">'+esc(replyShown||'—')+'</div>'+
       (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
       (imgs.length?thumbsHtml(imgs):'')+
     '</div>'+
     editArea+
-    confDots(d.confidence)+
+    toneScoreRow(id)+
     actions+
   '</div>';
 }
+// 숙박일자 라벨(Q1). checkin/checkoutDate(YYYY-MM-DD) → "M/D–M/D". 없으면 '숙박일자 미상'.
+function md(iso){ if(!iso) return null; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(Number(m[2])+'/'+Number(m[3])):null; }
+function stayLabel(d){ const ci=md(d&&d.checkinDate), co=md(d&&d.checkoutDate);
+  if(ci&&co) return ci+'–'+co; if(ci) return ci+' 체크인'; if(co) return '~'+co+' 체크아웃'; return '숙박일자 미상'; }
 
 function fmtTime(iso){
   if(!iso) return '—';
@@ -411,7 +428,7 @@ function renderWait(){
   const threshold=kstDayStartMs(Date.now());
   const staleN=entries.filter(([k,d])=>(d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold).length;
   bulkBar.innerHTML = staleN
-    ? '<div class="bulkbar"><div class="t"><b>지난 문의 '+staleN+'건</b> — 오늘 0시(KST) 이전 수신분. 이미 익스트라넷에서 답했다면 한 번에 치우세요.</div>'+
+    ? '<div class="bulkbar"><div class="t"><b>지난 문의 '+staleN+'건</b> — 오늘 0시(KST) 이전 수신분. 카테고리별 질문 분류로 정리하고 한 번에 치웁니다(답변 학습 아님).</div>'+
       '<button onclick="bulkDismiss()">모두 지난 처리</button></div>'
     : '';
   if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
@@ -420,25 +437,32 @@ function renderWait(){
   list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
 }
 
+// 학습모드: status==='saved'(학습 저장분)을 '학습됨' 탭에 / 실발송 모드: status==='sent'를 '보냄' 탭에
 function renderSent(){
   const list=document.getElementById('sentList'); if(!list) return;
-  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status==='sent');
+  const want = learnMode ? 'saved' : 'sent';
+  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status===want);
+  const lbl=document.getElementById('tSentLbl'); if(lbl) lbl.textContent=learnMode?'학습됨':'보냄';
   const t=document.getElementById('tSent'); if(t) t.textContent=entries.length||'—';
-  if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
+  if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">'+(learnMode?'저장된 학습 답변 없음':'보낸 초안 없음')+'</div>'+(learnMode?'승인·저장된 답변이 여기 쌓입니다.':'승인·발송된 답변이 여기 쌓입니다.')+'</div>'; return; }
   entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
   list.innerHTML=entries.map(([k,d])=>sentCard(k,d)).join('');
 }
 function sentCard(id,d){
   const final=String(d.finalReply||d.reply||'');
-  const summary=final.replace(IMG_RE,'').replace(/\s+/g,' ').trim();
-  const clip=summary.slice(0,90)+(summary.length>90?'…':'');
+  const shown=final.replace(IMG_RE,'').trim();
+  const edited=!!d.editedByClara;
+  const whoLbl = learnMode ? (edited?'내 답변 · 수정본':'학습된 말투') : 'SENT';
+  const stamp = learnMode ? (fmtKST(d.savedAt)+' 저장') : (fmtTime(d.sentAt)+' 발송');
+  const scoreBadge = (d.claraToneScore!=null && d.claraToneScore>0)?'<span class="edited-badge">말투 '+esc(String(d.claraToneScore))+'/5</span>':'';
   return '<div class="card">'+
     '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
       '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
       (d.autoApproved?'<span class="auto-badge">자동</span>':'')+
-      (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
-      '<span class="time">'+esc(fmtTime(d.sentAt))+' 발송</span></div>'+
-    '<div class="msg sent-body"><div class="who">SENT</div><div class="body">'+esc(clip||'—')+'</div></div>'+
+      (edited?'<span class="edited-badge">수정본</span>':'')+scoreBadge+
+      '<span class="time">'+esc(stamp)+'</span></div>'+
+    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · '+esc(stayLabel(d))+'</div>'+
+    '<div class="msg sent-body"><div class="who">'+esc(whoLbl)+'</div><div class="body">'+esc(shown||'—')+'</div></div>'+
   '</div>';
 }
 
@@ -446,12 +470,15 @@ function sentCard(id,d){
 function approveDraft(id){
   const d=drafts[id];
   if(!d || d.status!=='pending'){ toast('이미 처리된 초안입니다'); return; } // 이중 조작 방지
-  if(!confirm('발송할까요?')) return; // 유일한 확인 다이얼로그
+  // 학습모드=발송 없음(되돌릴 수 있음)이라 컨펌 불필요 / 실발송 모드만 확인 다이얼로그.
+  if(!learnMode && !confirm('게스트에게 발송할까요?')) return;
   const base=String(d.reply||'');
   const final=(editingIds.has(id)&&edits[id]!=null)?edits[id]:base;
   const edited=final.trim()!==base.trim();
-  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,approvedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기'); })
+  const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
+  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,claraToneScore:score,approvedAt:new Date().toISOString()})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; delete selfScores[id];
+      toast(learnMode?(edited?'수정본 저장 대기(학습)':'저장 대기(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
     .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
 }
 function retryDraft(id){
@@ -466,17 +493,37 @@ function dismissDraft(id){
     .then(()=>{ editingIds.delete(id); delete edits[id]; toast('지난 문의로 치움'); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
 }
-// 일괄: 오늘 0시(KST) 이전 수신한 pending 전부 dismissed (confirm 1회 — 발송 컨펌과 별개, 허용됨)
+// (D) 질문 분류 자산화: 대상 draft들을 category별로 그룹핑 → {category, count, representatives[]}.
+//   신규 AI 호출 없음(이미 계산된 d.category 재사용). 대표 질문은 정규화 중복 제거 후 최대 2개.
+function normQ(s){ return String(s==null?'':s).toLowerCase().replace(/\s+/g,' ').replace(/[\s.!?…~]+$/,'').trim(); }
+function buildTaxonomy(list){
+  const byCat={};
+  list.forEach(d=>{
+    const q=String((d&&d.origMsg)||'').trim(); if(!q) return;
+    const cat=(((d&&d.category)||'기타').trim())||'기타';
+    if(!byCat[cat]) byCat[cat]={category:cat,count:0,seen:{},representatives:[]};
+    const g=byCat[cat]; g.count++;
+    const key=normQ(q);
+    if(key && !g.seen[key]){ g.seen[key]=1; if(g.representatives.length<2) g.representatives.push(q.slice(0,120)); }
+  });
+  return Object.keys(byCat).map(c=>({category:byCat[c].category,count:byCat[c].count,representatives:byCat[c].representatives}))
+    .sort((a,b)=>b.count-a.count);
+}
+// 일괄 '모두 지난 처리' = 질문분류 자산화(cs/questionTaxonomy) + 대기목록 정리(dismissed). 코퍼스 시트 미접촉.
 function bulkDismiss(){
   const threshold=kstDayStartMs(Date.now());
   const ids=Object.keys(drafts||{}).filter(id=>{const d=drafts[id];
     return d && (d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold;});
   if(!ids.length){ toast('해당하는 지난 문의 없음'); return; }
-  if(!confirm('오늘 0시(KST) 이전에 받은 대기 문의 '+ids.length+'건을 모두 "지난 문의"로 치울까요?\n삭제 아님 · 데이터 보존 · 발송되지 않습니다.')) return;
+  if(!confirm('오늘 0시(KST) 이전 대기 문의 '+ids.length+'건을 질문 분류로 정리하고 "지난 문의"로 치울까요?\n삭제 아님 · 데이터 보존 · 발송/저장되지 않습니다.')) return;
   const now=new Date().toISOString();
+  const categories=buildTaxonomy(ids.map(id=>drafts[id])); // 코퍼스 시트 아님 — cs/questionTaxonomy로만
   const patch={}; ids.forEach(id=>{ patch[id+'/status']='dismissed'; patch[id+'/dismissedAt']=now; });
-  update(ref(db,'cs/drafts'),patch) // 다중 경로 1회 쓰기
-    .then(()=>toast(ids.length+'건 지난 문의로 치움')).catch(e=>toast('일괄 치우기 실패: 쓰기 권한 확인'));
+  Promise.all([
+    set(ref(db,'cs/questionTaxonomy'),{generatedAt:now, total:ids.length, categories:categories}),
+    update(ref(db,'cs/drafts'),patch) // 다중 경로 1회 쓰기
+  ]).then(()=>toast(ids.length+'건 분류·정리 완료 ('+categories.length+'개 분류)'))
+    .catch(e=>toast('정리 실패: 쓰기 권한 확인'));
 }
 function toggleEdit(id){
   if(editingIds.has(id)) editingIds.delete(id);
@@ -486,8 +533,18 @@ function toggleEdit(id){
 function editInput(id,val){ edits[id]=val; } // 재렌더 안 함 → 포커스 유지
 
 function renderAuto(){
-  document.body.classList.toggle('auto-on',auto);
+  const stag=document.querySelector('.stage-tag'); if(stag) stag.textContent=learnMode?'학습모드':'M2b·2';
   const sw=document.getElementById('autoSw');
+  if(learnMode){ // 7월 학습모드: 자동발송 잠금(8월 복귀). 녹색 링/배지 끄고 스위치 비활성.
+    document.body.classList.remove('auto-on');
+    sw.classList.remove('on'); sw.classList.add('locked'); sw.setAttribute('aria-checked','false');
+    document.getElementById('swKnob').textContent='🔒';
+    document.getElementById('swLab').textContent='잠금';
+    document.getElementById('autoTxt').innerHTML='<b>학습 모드</b> — 승인 시 발송 없이 학습 저장 (자동발송 8월 복귀)';
+    return;
+  }
+  sw.classList.remove('locked');
+  document.body.classList.toggle('auto-on',auto);
   sw.classList.toggle('on',auto);
   sw.setAttribute('aria-checked',auto?'true':'false');
   document.getElementById('swKnob').textContent=auto?'⚡':'☀';
@@ -496,8 +553,9 @@ function renderAuto(){
     ? '자동응대 <b>자동발송 ON</b> — confidence 0.8+ 초안 자동 발송'
     : '자동응대 <b>수동 승인 모드</b> — 전건 승인';
 }
-// 유일한 쓰기: cs/config/autoSend
+// 유일한 쓰기: cs/config/autoSend (학습모드 중엔 잠금)
 function toggleAuto(){
+  if(learnMode){ toast('학습 모드 중 — 자동발송은 8월 복귀'); return; }
   const next=!auto;
   set(ref(db,'cs/config/autoSend'), next)
     .then(()=> toast(next?'자동발송 ON — 이후 confidence 0.8+ 초안 자동 발송':'수동 승인 모드 — 전건 승인'))
@@ -535,7 +593,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 // onclick 핸들러 노출 (module 스코프)
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
-window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss;
+window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone;
 </script>
 </body>
 </html>

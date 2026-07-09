@@ -129,6 +129,19 @@ function csFetch_(url, params) {
 function cutoffMs_(cutoffIso) { if (!cutoffIso) return null; var t = Date.parse(cutoffIso); return isFinite(t) ? t : null; }
 function isBeforeCutoff_(msgTimeMs, cutoffMs) { return cutoffMs != null && msgTimeMs > 0 && msgTimeMs < cutoffMs; }
 
+// ── 7월 학습모드 스위치(Q3) : cs/config/learnMode (Firebase, 기본 ON) ──
+//   ON  = 실발송·autoSend 비활성(잠금, 삭제 아님) + 승인분을 CS-DB 시트에 학습저장.
+//   OFF = 8월 실발송 복귀(sendApprovedDrafts/autoApprovePass 정상 동작).
+//   DESK도 같은 노드를 읽어 버튼·상태·탭 라벨을 전환. 노드 부재 시 안전상 ON(발송 금지) 취급.
+//   run-local 캐시(_learnModeCache) — 한 트리거 실행 내 fbGet 1회로 제한.
+var _learnModeCache = null;
+function learnModeOn_() {
+  if (_learnModeCache !== null) return _learnModeCache;
+  var v = fbGet('cs/config/learnMode');
+  _learnModeCache = (v === null || v === undefined) ? true : (v === true);
+  return _learnModeCache;
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 메인 폴링 — 1분 트리거가 호출
 // ══════════════════════════════════════════════════════════════════
@@ -218,6 +231,7 @@ function gmReplyThread_(threadId, body) {
 
 // autoSend: pending & 조건 충족 → approved (같은 run 발송 워커가 발송)
 function autoApprovePass_() {
+  if (learnModeOn_()) return; // 학습모드: 자동 승인 비활성 — 수동 승인만이 학습신호(자가흉내 저장 방지)
   var on = (fbGet('cs/config/autoSend') === true);
   if (!on) return;
   var drafts = fbGet('cs/drafts'); if (!drafts) return;
@@ -237,6 +251,7 @@ function autoApprovePass_() {
 
 // approved 초안 발송 (최신상태 재확인 → sending 잠금 → 재조회 → reply → sent/error + 학습)
 function sendApprovedDrafts() {
+  if (learnModeOn_()) return; // 학습모드(7월): 실발송 비활성 — saveApprovedToSheet_ 가 대신 시트 저장(삭제 아님, 8월 복귀)
   var drafts = fbGet('cs/drafts'); if (!drafts) return;
   var nowMs = new Date().getTime();
   var ids = Object.keys(drafts);
@@ -296,6 +311,59 @@ function learnFromSend_(id, d, finalReply) {
   } catch (e) { Logger.log('learn 실패 ' + id + ': ' + e); }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 학습모드 저장 워커(Q2) — approved 초안을 CS-DB 시트에 append (게스트 발송 없음)
+//   ▣ 배치: pollCsInbox 에서 urlfetch 쿨다운 게이트 '앞'에서 호출(발송 멈춤과 무관하게 저장 진행).
+//   ▣ 비용: cs/drafts 소수 읽기(urlfetch) + 시트 native 쓰기(쿼터 무관). 하드 소진이면 첫 fbGet에서
+//      예외 → 호출부 catch 가 "하드 소진 가능" 로그(자기노출). 그 외(자체 60분 타이머)엔 정상 저장.
+//   ▣ 시트 열: A=lang B=guest_message C=clara_reply D=category E=clara_self_score(자기평가).
+//      importCorpusFromSheet/exportBacklogQuestionsToSheet 는 0~3열만 검증 → E열 추가 안전.
+//   ▣ 중복 가드: draft.savedToSheet 플래그(재승인·재실행 재저장 방지). 저장 성공 시 status='saved'.
+// ══════════════════════════════════════════════════════════════════
+function ensureSelfScoreHeader_(sheet) {
+  var h = sheet.getRange(1, 5).getValue();
+  if (String(h).trim() !== 'clara_self_score') sheet.getRange(1, 5).setValue('clara_self_score');
+}
+function saveApprovedToSheet_() {
+  if (!learnModeOn_()) return;               // 실발송 모드(8월)면 저장 워커 비활성
+  var drafts = fbGet('cs/drafts'); if (!drafts) return; // 하드 소진이면 여기서 throw → 호출부 catch
+  var ids = Object.keys(drafts), targets = [];
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d || d.status !== 'approved') continue; // 승인 대기분만
+    if (d.savedToSheet) continue;                // 이미 저장(멱등)
+    targets.push([id, d]);
+  }
+  if (!targets.length) return;
+
+  var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
+  var sheet = ss.getSheets()[0];
+  ensureSelfScoreHeader_(sheet);
+  var rows = [];
+  for (var k = 0; k < targets.length; k++) {
+    var dd = targets[k][1];
+    var q = String(dd.origMsg || '').trim();
+    var ans = String(dd.finalReply || dd.editedReply || dd.reply || '').trim();
+    var lang = dd.lang || guessLang_(ans || q);
+    var cat = dd.category || '';
+    var score = (dd.claraToneScore != null && dd.claraToneScore !== 0) ? dd.claraToneScore : ''; // 미평가는 빈칸
+    rows.push([lang, q, ans, cat, score]);
+  }
+  // 시트 native 쓰기(쿼터 무관) 먼저 → 성공 후 Firebase 마킹.
+  // (읽기 성공 = urlfetch 정상 → 마킹 fbUpdate 도 성공 가능성 높음. 만일 마킹만 실패해도
+  //  다음 run 에서 status 'approved'·savedToSheet 미표시로 재append 가능 — 학습시트 중복은 무해.)
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
+  var patch = {}, now = new Date().toISOString();
+  for (var m = 0; m < targets.length; m++) {
+    var sid = targets[m][0];
+    patch[sid + '/status'] = 'saved';
+    patch[sid + '/savedToSheet'] = true;
+    patch[sid + '/savedAt'] = now;
+  }
+  fbUpdate('cs/drafts', patch);
+  Logger.log('학습 저장: ' + rows.length + '건 시트 append + status=saved');
+}
+
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
 // 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 5분 주기 1개만 설치.
 function installCsTriggers() {
@@ -309,7 +377,12 @@ function installCsTriggers() {
 function safeDrafts_() { try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); } }
 
 function pollCsInbox() {
-  if (urlfetchCooldownActive_()) return; // urlfetch 쿨다운 중: 즉시 반환(Gmail·fetch 미접촉). 만료 시 내부에서 해제 후 진행.
+  // (Q2) 학습모드 저장 워커 — 쿨다운 게이트 '앞'에서 먼저 실행.
+  //   쿨다운은 '비싼 초안 대량생성' 방어용 자체 타이머라, 저비용(소수 읽기+시트 native)인 저장까지
+  //   막을 이유가 없음. 실제 하드 소진이면 saveApprovedToSheet_ 첫 fbGet 에서 예외 → 여기서 catch(자기노출).
+  try { saveApprovedToSheet_(); } catch (e) { Logger.log('학습 저장 워커 실패(=urlfetch 하드 소진 가능): ' + e); }
+
+  if (urlfetchCooldownActive_()) return; // urlfetch 쿨다운 중: 이하 초안 대량생성·발송은 skip. 만료 시 내부에서 해제 후 진행.
   var label = gmGetLabel_(CS_LABEL);
   if (_gmailStop) { safeDrafts_(); return; }
   if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); safeDrafts_(); return; }
@@ -715,6 +788,8 @@ function makeDraftFor_(msgId, inbox) {
     sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
     room: sirvoy ? sirvoy.room : null,
     receivedAt: inbox.receivedAt || null,       // 게스트 원 메일 수신시각(정렬·지난문의 판별용, inbox에서 승계)
+    checkinDate: inbox.checkinDate || null,     // (Q1) 숙박일자 표시용 — inbox 파싱분 승계
+    checkoutDate: inbox.checkoutDate || null,   // (Q1) 없으면 null → DESK '숙박일자 미상' 폴백
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
   };
   fbSet('cs/drafts/' + msgId, rec);
@@ -743,6 +818,26 @@ function backfillDraftReceivedAt() {
     filled++;
   }
   Logger.log('backfill 완료 — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
+}
+
+// (2d·Q1) 1회성 백필: checkin/checkoutDate 없는 기존 draft에 cs/inbox 값 승계(있는 것만).
+//   - 추가만(다른 필드·상태 불변), 멱등(이미 있으면 스킵). Gmail 미사용(fbGet/fbUpdate만).
+//   - 옛 파서 적재분은 inbox에도 날짜가 없을 수 있음 → 그런 건 그대로 두고 DESK가 '숙박일자 미상' 표시.
+//   Clara가 GAS 에디터에서 1회 실행.
+function backfillDraftStayDates() {
+  var drafts = fbGet('cs/drafts'); if (!drafts) { Logger.log('drafts 없음'); return; }
+  var inbox = fbGet('cs/inbox') || {};
+  var ids = Object.keys(drafts), filled = 0, skipped = 0, noSrc = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], d = drafts[id];
+    if (!d) continue;
+    if (d.checkinDate || d.checkoutDate) { skipped++; continue; }   // 이미 있음 → 멱등 스킵
+    var src = inbox[id] || {};
+    if (!src.checkinDate && !src.checkoutDate) { noSrc++; continue; } // inbox에도 없음 → 미상 유지
+    fbUpdate('cs/drafts/' + id, { checkinDate: src.checkinDate || null, checkoutDate: src.checkoutDate || null });
+    filled++;
+  }
+  Logger.log('stay dates backfill — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
 }
 
 // (2c) 1회성 백로그 정리: 현재 pending(또는 status 없음) draft 전체를 dismissed로 전환.
