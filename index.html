@@ -275,6 +275,7 @@ const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local
 
 let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
+let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
 let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
 
@@ -317,6 +318,7 @@ function startListeners(){
   onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
+  onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
@@ -354,8 +356,10 @@ function draftCard(id,d){
   const editing=editingIds.has(id);
   const editVal=(edits[id]!=null)?edits[id]:baseReply;
 
+  const saveFailed=(learnMode && st==='approved' && d.saveError);
   let right;
-  if(st==='approved') right='<span class="status approved"><span class="spinner"></span>'+(learnMode?'저장 대기중':'발송 대기중')+'</span>';
+  if(saveFailed) right='<span class="status error">저장 실패</span>';
+  else if(st==='approved') right='<span class="status approved"><span class="spinner"></span>'+(learnMode?'저장 중…':'발송 대기중')+'</span>';
   else if(st==='sending') right='<span class="status sending"><span class="spinner"></span>발송 중</span>';
   else if(st==='error') right='<span class="status error">발송 실패</span>';
   else right='<span class="time">'+esc(fmtKST(d.receivedAt||d.createdAt))+' 도착</span>';
@@ -367,11 +371,14 @@ function draftCard(id,d){
       '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>'+
       '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인 · 저장':'승인 · 발송')+'</button>'+
     '</div>';
+  } else if(saveFailed){
+    actions='<div class="err-row"><div class="errmsg">저장 실패: '+esc(d.saveError)+'</div>'+
+      '<button class="b go" onclick="retrySave(\''+id+'\')">재시도</button></div>';
   } else if(st==='error'){
     actions='<div class="err-row"><div class="errmsg">'+esc(d.errorMsg||'발송 오류')+'</div>'+
       '<button class="b go" onclick="retryDraft(\''+id+'\')">재시도</button></div>';
   } else {
-    actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — GAS가 학습 시트에 저장합니다(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
+    actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — 학습 시트에 저장 중(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
   }
   const editArea=(st==='pending'&&editing)
     ? '<textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
@@ -476,10 +483,24 @@ function approveDraft(id){
   const final=(editingIds.has(id)&&edits[id]!=null)?edits[id]:base;
   const edited=final.trim()!==base.trim();
   const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
-  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,claraToneScore:score,approvedAt:new Date().toISOString()})
+  update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; delete selfScores[id];
-      toast(learnMode?(edited?'수정본 저장 대기(학습)':'저장 대기(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
+      if(learnMode) triggerImmediateSave(id); // 승인 즉시 GAS 저장 호출(5분 폴링 대기 없음). 결과는 Firebase로 반영.
+      toast(learnMode?(edited?'수정본 저장 중…(학습)':'저장 중…(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
     .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
+}
+// 즉시저장 트리거 — GAS 웹앱에 fire-and-forget POST(no-cors). 성공/실패는 Firebase(status=saved/saveError)로 확인.
+// 미배포(saveHookUrl 빈값)면 조용히 스킵 → 5분 폴링이 저장(폴백).
+function triggerImmediateSave(id){
+  if(!saveHookUrl) return;
+  try{ fetch(saveHookUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({id:id})}).catch(()=>{}); }
+  catch(e){ /* 네트워크 실패 → 5분 폴링 폴백 */ }
+}
+// 저장 실패 카드 재시도 — saveError 클리어 후 즉시저장 재호출.
+function retrySave(id){
+  update(ref(db,'cs/drafts/'+id),{saveError:null})
+    .then(()=>{ toast('저장 재시도'); triggerImmediateSave(id); })
+    .catch(e=>toast('재시도 실패: 쓰기 권한 확인'));
 }
 function retryDraft(id){
   update(ref(db,'cs/drafts/'+id),{status:'approved',errorMsg:null,approvedAt:new Date().toISOString()})
@@ -593,7 +614,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 // onclick 핸들러 노출 (module 스코프)
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
-window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone;
+window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
 </script>
 </body>
 </html>

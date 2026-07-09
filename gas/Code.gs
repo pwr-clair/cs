@@ -326,42 +326,83 @@ function ensureSelfScoreHeader_(sheet) {
 }
 function saveApprovedToSheet_() {
   if (!learnModeOn_()) return;               // 실발송 모드(8월)면 저장 워커 비활성
-  var drafts = fbGet('cs/drafts'); if (!drafts) return; // 하드 소진이면 여기서 throw → 호출부 catch
-  var ids = Object.keys(drafts), targets = [];
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i], d = drafts[id];
-    if (!d || d.status !== 'approved') continue; // 승인 대기분만
-    if (d.savedToSheet) continue;                // 이미 저장(멱등)
-    targets.push([id, d]);
-  }
-  if (!targets.length) return;
+  // 스크립트 락: 즉시저장(doPost)과 5분 폴링(pollCsInbox)이 동시에 돌아도 이중 append 방지.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (le) { Logger.log('save 락 획득 실패 — skip(다른 실행이 저장 중)'); return; }
+  try {
+    var drafts = fbGet('cs/drafts'); if (!drafts) return; // 하드 소진이면 여기서 throw → 호출부 catch
+    var ids = Object.keys(drafts), targets = [];
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i], d = drafts[id];
+      if (!d || d.status !== 'approved') continue; // 승인 대기분만
+      if (d.savedToSheet) continue;                // 이미 저장(멱등)
+      targets.push([id, d]);
+    }
+    if (!targets.length) return;
 
-  var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
-  var sheet = ss.getSheets()[0];
-  ensureSelfScoreHeader_(sheet);
-  var rows = [];
-  for (var k = 0; k < targets.length; k++) {
-    var dd = targets[k][1];
-    var q = String(dd.origMsg || '').trim();
-    var ans = String(dd.finalReply || dd.editedReply || dd.reply || '').trim();
-    var lang = dd.lang || guessLang_(ans || q);
-    var cat = dd.category || '';
-    var score = (dd.claraToneScore != null && dd.claraToneScore !== 0) ? dd.claraToneScore : ''; // 미평가는 빈칸
-    rows.push([lang, q, ans, cat, score]);
-  }
-  // 시트 native 쓰기(쿼터 무관) 먼저 → 성공 후 Firebase 마킹.
-  // (읽기 성공 = urlfetch 정상 → 마킹 fbUpdate 도 성공 가능성 높음. 만일 마킹만 실패해도
-  //  다음 run 에서 status 'approved'·savedToSheet 미표시로 재append 가능 — 학습시트 중복은 무해.)
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
-  var patch = {}, now = new Date().toISOString();
-  for (var m = 0; m < targets.length; m++) {
-    var sid = targets[m][0];
-    patch[sid + '/status'] = 'saved';
-    patch[sid + '/savedToSheet'] = true;
-    patch[sid + '/savedAt'] = now;
-  }
-  fbUpdate('cs/drafts', patch);
-  Logger.log('학습 저장: ' + rows.length + '건 시트 append + status=saved');
+    var rows = [];
+    for (var k = 0; k < targets.length; k++) {
+      var dd = targets[k][1];
+      var q = String(dd.origMsg || '').trim();
+      var ans = String(dd.finalReply || dd.editedReply || dd.reply || '').trim();
+      var lang = dd.lang || guessLang_(ans || q);
+      var cat = dd.category || '';
+      var score = (dd.claraToneScore != null && dd.claraToneScore !== 0) ? dd.claraToneScore : ''; // 미평가는 빈칸
+      rows.push([lang, q, ans, cat, score]);
+    }
+
+    var now = new Date().toISOString();
+    try {
+      var ss = SpreadsheetApp.openById(CS_DB_SHEET_ID);
+      var sheet = ss.getSheets()[0];
+      ensureSelfScoreHeader_(sheet);
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 5).setValues(rows); // native 쓰기(쿼터 무관)
+    } catch (se) {
+      // 시트 쓰기 실패(권한·시트 오류 등) → status 'approved' 유지 + saveError 마킹.
+      // DESK가 '저장 실패 · 재시도' 표시 → 무한 '저장 대기중' 방지.
+      var epatch = {};
+      for (var e2 = 0; e2 < targets.length; e2++) {
+        epatch[targets[e2][0] + '/saveError'] = String(se).slice(0, 180);
+        epatch[targets[e2][0] + '/saveErrorAt'] = now;
+      }
+      try { fbUpdate('cs/drafts', epatch); } catch (fe) { Logger.log('saveError 마킹 실패: ' + fe); }
+      Logger.log('⛔ 학습 시트 저장 실패: ' + se);
+      return;
+    }
+
+    // 성공 → saved 마킹 + saveError 클리어.
+    var patch = {};
+    for (var m = 0; m < targets.length; m++) {
+      var sid = targets[m][0];
+      patch[sid + '/status'] = 'saved';
+      patch[sid + '/savedToSheet'] = true;
+      patch[sid + '/savedAt'] = now;
+      patch[sid + '/saveError'] = null;
+    }
+    fbUpdate('cs/drafts', patch);
+    Logger.log('학습 저장: ' + rows.length + '건 시트 append + status=saved');
+  } finally { lock.releaseLock(); }
+}
+
+// ── 승인 즉시저장 웹앱 엔드포인트(doPost) ─────────────────────────────
+//   DESK 승인 → 이 URL로 POST → saveApprovedToSheet_ 즉시 실행(5분 폴링 대기 없음).
+//   결과는 Firebase(status=saved / saveError)로 반영되므로 응답 본문은 무의미(no-cors 사용).
+//   보안: 처리 대상은 '이미 승인된(approved) draft'뿐 — 게스트 발송 없음·멱등·락 보호. 시크릿 불필요(레포에 시크릿 금지).
+//   배포(Clara 1회): 배포 → 새 배포 → 웹앱 / 실행=본인(paradisewalkresidence) / 액세스=모든 사용자 → 배포 후 publishSaveHookUrl 실행.
+function doPost(e) {
+  try { saveApprovedToSheet_(); return ContentService.createTextOutput('ok'); }
+  catch (err) { Logger.log('doPost 저장 실패: ' + err); return ContentService.createTextOutput('err:' + err); }
+}
+function doGet(e) { // 브라우저 수동 점검용(같은 동작)
+  try { saveApprovedToSheet_(); return ContentService.createTextOutput('ok(get)'); }
+  catch (err) { return ContentService.createTextOutput('err:' + err); }
+}
+// 배포 후 1회 실행: 현재 웹앱 배포 URL을 cs/config/saveHookUrl 에 등록 → DESK가 자동으로 읽어 즉시저장 호출.
+function publishSaveHookUrl() {
+  var url = ScriptApp.getService().getUrl();
+  if (!url) { Logger.log('웹앱 미배포 — 먼저 [배포]로 웹앱 배포 후 실행'); return; }
+  fbSet('cs/config/saveHookUrl', url);
+  Logger.log('saveHookUrl 등록 완료: ' + url);
 }
 
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
