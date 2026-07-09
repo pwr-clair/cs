@@ -563,6 +563,7 @@ function ingestMessage_(msg, threadId) {
     raw: raw,                 // §6c: 파싱 실패해도 raw 는 항상 보존 — 메일 유실 금지
     parsed: parsed.ok ? { message: parsed.message } : null,
     parseFailed: !parsed.ok, // §6c: 파싱실패 플래그
+    extractFailed: parsed.extractFailed || false, // 아고다 "메시지:" 라벨 못 찾음(껍데기 미적재) — 초안 스킵
     bookingIdMismatch: parsed.bookingIdMismatch || false, // From/본문 예약번호 불일치 감지
     rawTail: parsed.rawTail || false, // 종료마커 못 찾아 message 전체 유지됨 플래그
     checkinDate: parsed.checkinDate || null,   // 예약 상세: 체크인 (YYYY-MM-DD)
@@ -702,17 +703,37 @@ function parseBookingCh_(raw) {
 }
 
 // 2) 아고다 — 한글 템플릿
+// 아고다 게스트 본문 종료마커(푸터). ※ 'agoda' 단어는 게스트 본문에 자주 등장하므로 종료마커로 쓰지 말 것.
+function isAgodaEndMarker_(t) {
+  if (!t) return false;
+  return t.indexOf('Did you know?') >= 0
+      || t.indexOf('이전 메시지') >= 0
+      || t.indexOf('아래 원문') >= 0
+      || t.indexOf('예약 관리') >= 0
+      || t.indexOf('YCS') >= 0
+      || t.indexOf('© ') >= 0 || t.indexOf('©Agoda') >= 0 || t.indexOf('Copyright') >= 0
+      || t.indexOf('이 이메일') >= 0
+      || t.indexOf('회신하려면') >= 0
+      || /^[-─—=_]{3,}$/.test(t); // 구분선
+}
+
+// 2) 아고다 — 한글 껍데기 + "메시지:" 라벨 뒤 실제 게스트 본문. (라벨 한국어 고정, 본문은 게스트 언어 무관)
+//   실물 구조(확인됨): "…안녕하세요." / "…여행객에게서 온 메시지입니다." / "[새 메시지] 문의 사항 (발신: {게스트명}님)"
+//                     / "예약 번호: {번호}" / "메시지: {진짜 본문}"
+//   ★ 예전 버그: 라벨 앵커 없이 '첫 산문 블록'을 취해 상단 껍데기를 게스트 원문으로 오추출 → 엉뚱한 초안.
 function parseAgoda_(raw) {
   var out = newParse_();
   var body = raw.body || '', subject = raw.subject || '', from = raw.from || '';
   var lines = body.split('\n');
 
-  // 게스트명: 제목 "Reply from {name} (...)" 괄호 전까지, 없으면 From 표시명
-  var mg = subject.match(/Reply from\s+(.+?)\s*\(/i);
-  if (mg) out.guest = mg[1].trim();
-  else { var dm = from.match(/^\s*"?([^"<]+?)"?\s*</); if (dm) out.guest = dm[1].trim(); }
+  // 게스트명: "[새 메시지] 문의 사항 (발신: {name}님)" 우선 → 제목 "Reply from" → From 표시명
+  var gh = body.match(/발신\s*[:：]?\s*([^()\n]+?)\s*님/);
+  if (gh) out.guest = gh[1].trim();
+  else { var mg = subject.match(/Reply from\s+(.+?)\s*\(/i);
+         if (mg) out.guest = mg[1].trim();
+         else { var dm = from.match(/^\s*"?([^"<]+?)"?\s*</); if (dm) out.guest = dm[1].trim(); } }
 
-  // 예약번호: 본문 "예약 번호:" (한국어 정규식 그대로)
+  // 예약번호: 본문 "예약 번호: {번호}" (한국어 라벨). 게스트 본문 속 영문 'booking number'와 구분됨.
   var mk = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
   out.bookingId = mk ? mk[1] : null;
 
@@ -723,24 +744,24 @@ function parseAgoda_(raw) {
     if (d) { var mo = monthNum_(d[1]); if (mo) { out.checkinDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[2]); out.checkoutDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[3]); } }
   }
 
-  // 메시지: 게스트 메시지 첫 블록만 (종료마커 전까지, 헤더 라인 스킵).
-  //   ※ 실물 스펙에 메시지 '시작' 마커가 없어, 종료마커 이전 '첫 산문 블록'을 취함(헤더 제외) — 런타임 확인 필요.
-  var endIdx = lines.length;
+  // 게스트 본문: "메시지:" 라벨 뒤부터 첫 종료마커 전까지. ("이전 메시지"는 앵커로 쓰지 않음)
+  var msgIdx = -1;
   for (var i = 0; i < lines.length; i++) {
-    var t = lines[i].trim();
-    if (t.indexOf('아래 원문 메시지') >= 0 || t.indexOf('Did you know?') >= 0 || t.indexOf('이전 메시지') >= 0) { endIdx = i; break; }
+    if (/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])) { msgIdx = i; break; }
   }
-  //   상단 트래킹 링크/이미지 alt/순수 URL을 게스트 메시지로 오인하지 않도록 헤더에서 제외(관측 근거).
-  var mm = [], started = false;
-  for (var j = 0; j < endIdx; j++) {
-    var raw2 = lines[j], u = raw2.trim();
-    var isHeader = /^예약\s*번호/.test(u) || /^Reply from/i.test(u) || (out.guest && u === out.guest)
-                 || /^\[image:/i.test(u) || /^https?:\/\//i.test(u) || /tracking\.agoda\.com/i.test(u);
-    if (!started) { if (u === '' || isHeader) continue; started = true; mm.push(raw2); }
-    else { if (u === '' || isHeader) break; mm.push(raw2); }
+  if (msgIdx >= 0) {
+    var collected = [];
+    var firstAfter = lines[msgIdx].replace(/^\s*메시지\s*[:：]\s*/, '');
+    if (firstAfter.trim()) collected.push(firstAfter);
+    for (var j = msgIdx + 1; j < lines.length && collected.length < 40; j++) {
+      if (isAgodaEndMarker_(lines[j].trim())) break;
+      collected.push(lines[j]);
+    }
+    out.message = collected.join('\n').trim() || null;
+    if (out.message && out.message.length > 1500) out.message = out.message.slice(0, 1500);
   }
-  out.message = mm.join('\n').trim() || null;
-  if (!out.message) { out.message = body.trim() || null; out.rawTail = true; } // 못 뽑으면 rawTail로만 폴백(전체는 dispatcher가 1000자 상한)
+  // 폴백: "메시지:" 라벨 못 찾음 → 껍데기 넣지 않고 추출 실패로 표시(엉뚱한 초안 방지). rawTail(전체 덤프) 금지.
+  if (!out.message) out.extractFailed = true;
 
   out.lang = guessLang_(out.message);
   out.ok = !!(out.bookingId && out.message);
@@ -1058,6 +1079,23 @@ function dumpInboxRawSamples() {
     if (seen.booking >= want.booking && seen.agoda >= want.agoda) break;
   }
   Logger.log('\n덤프 완료 — booking:' + seen.booking + ' / agoda:' + seen.agoda + ' (마커 수정 결과와 육안 대조)');
+}
+
+// (진단) 기존 아고다 오추출 범위 — cs/inbox의 아고다 레코드 중 parsed.message가 껍데기로 보이는 건 카운트.
+//   fbGet만(Gmail 미접촉·무료). Clara가 GAS에서 1회 실행. 소급 재파싱은 별도 결정(자동 실행 안 함).
+function countAgodaShellMessages() {
+  var inbox = fbGet('cs/inbox'); if (!inbox) { Logger.log('cs/inbox 비어있음'); return; }
+  var ids = Object.keys(inbox), agoda = 0, shell = 0, samples = [];
+  var SHELL = /안녕하세요|여행객에게서 온 메시지|\[새 메시지\]|문의 사항\s*\(발신/;
+  for (var i = 0; i < ids.length; i++) {
+    var r = inbox[ids[i]]; if (!r) continue;
+    var ch = r.source || (r.raw && detectChannel_(r.raw.from));
+    if (ch !== 'agoda') continue;
+    agoda++;
+    var m = (r.parsed && r.parsed.message) || '';
+    if (SHELL.test(m)) { shell++; if (samples.length < 8) samples.push(ids[i] + '(' + (r.bookingId || '?') + ')'); }
+  }
+  Logger.log('아고다 inbox: ' + agoda + '건 / 껍데기 오추출 추정: ' + shell + '건.\n표본: ' + samples.join(', '));
 }
 
 // corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)

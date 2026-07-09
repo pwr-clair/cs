@@ -40,21 +40,19 @@ function bookingMessage(body, subject, guest){
   return out;
 }
 
-// parseAgoda_ 의 message 추출부 재현
-function agodaMessage(body, guest){
-  var lines = body.split('\n');
-  var endIdx = lines.length;
-  for(var i=0;i<lines.length;i++){ var t=lines[i].trim();
-    if(t.indexOf('아래 원문 메시지')>=0 || t.indexOf('Did you know?')>=0 || t.indexOf('이전 메시지')>=0){ endIdx=i; break; } }
-  var mm=[], started=false;
-  for(var j=0;j<endIdx;j++){ var raw2=lines[j], u=raw2.trim();
-    var isHeader = /^예약\s*번호/.test(u) || /^Reply from/i.test(u) || (guest && u===guest)
-                 || /^\[image:/i.test(u) || /^https?:\/\//i.test(u) || /tracking\.agoda\.com/i.test(u);
-    if(!started){ if(u===''||isHeader) continue; started=true; mm.push(raw2); }
-    else { if(u===''||isHeader) break; mm.push(raw2); }
-  }
-  var out = { message: mm.join('\n').trim()||null, rawTail:false };
-  if(!out.message){ out.message=body.trim()||null; out.rawTail=true; }
+// parseAgoda_ 의 message 추출부 재현 — "메시지:" 라벨 앵커(껍데기 배제).
+function isAgodaEnd(t){ if(!t) return false;
+  return t.indexOf('Did you know?')>=0||t.indexOf('이전 메시지')>=0||t.indexOf('아래 원문')>=0
+    ||t.indexOf('예약 관리')>=0||t.indexOf('YCS')>=0||t.indexOf('© ')>=0||t.indexOf('©Agoda')>=0||t.indexOf('Copyright')>=0
+    ||t.indexOf('이 이메일')>=0||t.indexOf('회신하려면')>=0||/^[-─—=_]{3,}$/.test(t); }
+function agodaMessage(body){
+  var lines=body.split('\n'), msgIdx=-1;
+  for(var i=0;i<lines.length;i++){ if(/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])){ msgIdx=i; break; } }
+  var out={message:null, extractFailed:false};
+  if(msgIdx>=0){ var c=[]; var fa=lines[msgIdx].replace(/^\s*메시지\s*[:：]\s*/,''); if(fa.trim())c.push(fa);
+    for(var j=msgIdx+1;j<lines.length && c.length<40;j++){ if(isAgodaEnd(lines[j].trim()))break; c.push(lines[j]); }
+    out.message=c.join('\n').trim()||null; if(out.message&&out.message.length>1500)out.message=out.message.slice(0,1500); }
+  if(!out.message)out.extractFailed=true;
   return out;
 }
 
@@ -141,28 +139,38 @@ var l2 = bookingMessage([
 ].join('\n'), '홍길동 님의 메시지가 도착했습니다', '홍길동');
 eq('2b KO message', l2.message, '체크인 몇 시인가요?');
 
-print('[3] 아고다 신형 — 상단 트래킹/이미지 링크 제외, 게스트 질문만.');
+print('[3] 아고다 — "메시지:" 라벨 뒤 실제 본문만, 상단 껍데기 제외.');
 
 var a1 = agodaMessage([
-  '[image: Agoda.com]',
-  'https://tracking.agoda.com/click?redirectUrl=https%3A%2F%2Fago.da%2Fx&token=abc123',
-  'Reply from Jane Smith (Jul 11-12, 2026)',
+  '파라다이스워크 레지던스 숙소님, 안녕하세요.',
+  '귀하의 숙소에 숙박 예정인 여행객에게서 온 메시지입니다.',
+  '[새 메시지] 문의 사항 (발신: Jane Smith님)',
+  '예약 번호: 1234567890',
+  '메시지: Hi, can I check in early at 11am?',
   '',
-  'Hi, can I check in early at 11am?',
-  '',
-  '아래 원문 메시지',
-  '(지난 대화 인용...)'
-].join('\n'), 'Jane Smith');
-eq('3a agoda message = 질문만', a1.message, 'Hi, can I check in early at 11am?');
-ok('3a tracking/image 미포함', noneOf(a1.message, ['tracking.agoda.com','[image:','redirectUrl']));
-ok('3a rawTail=false', a1.rawTail===false);
+  'Did you know?',
+  'YCS 앱에서 더 빠르게...'
+].join('\n'));
+eq('3a 껍데기 제외·본문만', a1.message, 'Hi, can I check in early at 11am?');
+ok('3a 껍데기 미포함', noneOf(a1.message||'', ['안녕하세요','여행객','[새 메시지]','예약 번호']));
+ok('3a extractFailed=false', a1.extractFailed===false);
 
-// 3b) 못 뽑는 경우(헤더/트래킹뿐) → rawTail 폴백(전체는 dispatcher가 상한)
+// QIQI WU 실사례(예약 1737525767) — 본문에 'agoda:'·숫자 있어도 정확 추출
+var q = agodaMessage([
+  '파라다이스워크 레지던스 숙소님, 안녕하세요.',
+  '[새 메시지] 문의 사항 (발신: QIQI WU님)',
+  '예약 번호: 1737525767',
+  '메시지: this is the booking number from agoda:1737525767 and I booked the room on July 11th',
+  'Did you know?'
+].join('\n'));
+eq('QIQI 본문 정확 추출', q.message, 'this is the booking number from agoda:1737525767 and I booked the room on July 11th');
+
+// 3b) "메시지:" 라벨 없음 → 껍데기 넣지 않고 추출 실패(엉뚱한 초안 방지)
 var a2 = agodaMessage([
-  '[image: Agoda.com]',
-  'https://tracking.agoda.com/click?token=only'
-].join('\n'), 'Jane Smith');
-ok('3b message 있음(폴백)', !!a2.message);
-ok('3b rawTail=true', a2.rawTail===true);
+  '파라다이스워크 레지던스 숙소님, 안녕하세요.',
+  '귀하의 숙소에 숙박 예정인 여행객에게서 온 메시지입니다.'
+].join('\n'));
+ok('3b 라벨 없으면 message null', a2.message===null);
+ok('3b extractFailed=true(껍데기 미덤프)', a2.extractFailed===true);
 
 print('결과: '+pass+' PASS / '+fail+' FAIL');
