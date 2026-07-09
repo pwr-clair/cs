@@ -788,8 +788,9 @@ function makeDraftFor_(msgId, inbox) {
     sirvoyId: sirvoy ? sirvoy.sirvoyId : null,  // pendingBookings 매칭 키(Sirvoy 내부번호). 실패 시 null.
     room: sirvoy ? sirvoy.room : null,
     receivedAt: inbox.receivedAt || null,       // 게스트 원 메일 수신시각(정렬·지난문의 판별용, inbox에서 승계)
-    checkinDate: inbox.checkinDate || null,     // (Q1) 숙박일자 표시용 — inbox 파싱분 승계
-    checkoutDate: inbox.checkoutDate || null,   // (Q1) 없으면 null → DESK '숙박일자 미상' 폴백
+    // 숙박일자: HK app/pendingBookings(방번호와 동일 경로) 우선, 파서(inbox)값 폴백, 둘 다 없으면 null→'미상'.
+    checkinDate: (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null,
+    checkoutDate: (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null,
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
   };
   fbSet('cs/drafts/' + msgId, rec);
@@ -820,24 +821,28 @@ function backfillDraftReceivedAt() {
   Logger.log('backfill 완료 — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
 }
 
-// (2d·Q1) 1회성 백필: checkin/checkoutDate 없는 기존 draft에 cs/inbox 값 승계(있는 것만).
-//   - 추가만(다른 필드·상태 불변), 멱등(이미 있으면 스킵). Gmail 미사용(fbGet/fbUpdate만).
-//   - 옛 파서 적재분은 inbox에도 날짜가 없을 수 있음 → 그런 건 그대로 두고 DESK가 '숙박일자 미상' 표시.
+// (2d·Q1) 1회성 백필: 기존 draft의 숙박일자를 HK app/pendingBookings 기준으로 다시 채움.
+//   - 우선순위: HK 레코드(방번호와 동일 경로, findSirvoy_) > 기존 draft값 > 파서(inbox)값. HK 값이 있으면 덮어씀.
+//   - 값이 실제로 바뀔 때만 fbUpdate(멱등·불필요쓰기 방지). 다른 필드·상태 불변. Gmail 미사용(fbGet/fbUpdate만).
+//   - HK·inbox 둘 다 없으면 그대로 두고 DESK가 '숙박일자 미상' 표시.
 //   Clara가 GAS 에디터에서 1회 실행.
 function backfillDraftStayDates() {
   var drafts = fbGet('cs/drafts'); if (!drafts) { Logger.log('drafts 없음'); return; }
   var inbox = fbGet('cs/inbox') || {};
-  var ids = Object.keys(drafts), filled = 0, skipped = 0, noSrc = 0;
+  var ids = Object.keys(drafts), fromHk = 0, fromInbox = 0, unchanged = 0, none = 0;
   for (var i = 0; i < ids.length; i++) {
     var id = ids[i], d = drafts[id];
     if (!d) continue;
-    if (d.checkinDate || d.checkoutDate) { skipped++; continue; }   // 이미 있음 → 멱등 스킵
+    var sv = findSirvoy_(d.bookingId);                 // HK 레코드(loadPending_ 캐시 사용)
     var src = inbox[id] || {};
-    if (!src.checkinDate && !src.checkoutDate) { noSrc++; continue; } // inbox에도 없음 → 미상 유지
-    fbUpdate('cs/drafts/' + id, { checkinDate: src.checkinDate || null, checkoutDate: src.checkoutDate || null });
-    filled++;
+    var ci = (sv && sv.checkinDate)  || d.checkinDate  || src.checkinDate  || null;
+    var co = (sv && sv.checkoutDate) || d.checkoutDate || src.checkoutDate || null;
+    if (!ci && !co) { none++; continue; }              // 어디에도 없음 → 미상 유지
+    if (ci === (d.checkinDate || null) && co === (d.checkoutDate || null)) { unchanged++; continue; } // 변화 없음
+    fbUpdate('cs/drafts/' + id, { checkinDate: ci, checkoutDate: co });
+    if (sv && (sv.checkinDate || sv.checkoutDate)) fromHk++; else fromInbox++;
   }
-  Logger.log('stay dates backfill — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
+  Logger.log('stay dates backfill(HK 우선) — HK채움:' + fromHk + ' / inbox채움:' + fromInbox + ' / 변화없음:' + unchanged + ' / 소스없음:' + none);
 }
 
 // (2c) 1회성 백로그 정리: 현재 pending(또는 status 없음) draft 전체를 dismissed로 전환.
@@ -954,7 +959,9 @@ function findSirvoy_(bookingId) {
   for (var key in p) {
     var b = p[key];
     if (b && String(b.channelBookingId) === String(bookingId))
-      return { sirvoyId: key, room: (b.assignedRoom || null) }; // 문자열 방번호(예 "620"). 미배정 시 필드 없음 → null → 푸시 "미상"
+      // 방번호·숙박일자를 같은 HK 레코드에서 함께 반환(HK index.html:1268 확인 — checkinDate/checkoutDate/assignedRoom 동일 레코드).
+      return { sirvoyId: key, room: (b.assignedRoom || null),
+               checkinDate: (b.checkinDate || null), checkoutDate: (b.checkoutDate || null) };
   }
   return null; // 매칭 실패 → null 허용 (폴백 미구현, Fable 지시)
 }
