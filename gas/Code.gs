@@ -860,6 +860,7 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
     status: 'pending', editedReply: null,
     lang: inbox.lang || 'en', guest: inbox.guest || null, bookingId: inbox.bookingId || null,
+    channel: inbox.source || null,              // 플랫폼(booking/agoda/expedia) — DESK 그룹헤더 뱃지용. 기존분은 null.
     replyTo: inbox.replyTo || null,
     threadId: inbox.threadId || null,           // 발송 스레드 (없으면 발송 워커가 error 처리)
     emailReply: inbox.emailReply !== false,     // false(expedia) → 발송 워커가 error 처리
@@ -1035,6 +1036,7 @@ function claudeDraft_(inbox, examples, history) {
   if (res.getResponseCode() >= 300) throw new Error('Claude API ' + res.getResponseCode() + ': ' + res.getContentText());
   var body = JSON.parse(res.getContentText());
   var text = (body.content && body.content[0] && body.content[0].text) || '';
+  if (_diagRaw) Logger.log('RAW Claude 응답:\n' + text); // 진단(diagPeekTasks)에서만 켜짐
   var obj = extractJson_(text);
   if (!obj) throw new Error('Claude 응답 JSON 파싱 실패: ' + text.slice(0, 200));
   return {
@@ -1059,6 +1061,24 @@ function extractJson_(s) {
   var i = s.indexOf('{'), j = s.lastIndexOf('}');
   if (i < 0 || j < 0) return null;
   try { return JSON.parse(s.substring(i, j + 1)); } catch (e) { return null; }
+}
+
+// (진단) 업무 탭 0 규명 — 지정 msgId 하나로 초안 호출 1회 실행 → 원응답 raw + 파싱된 tasks 로그.
+//   Clara가 GAS에서 diagPeekTasks('<cs/inbox의 msgId>') 실행. Claude 호출 1회(비용 발생) — 156 재생성 아님.
+//   tasks가 raw에 있으면 신규 파이프라인 정상, 기존 156의 0은 2a33058 이전 생성분이라 정상.
+var _diagRaw = false;
+function diagPeekTasks(msgId) {
+  if (!msgId) { Logger.log('사용법: diagPeekTasks("cs/inbox의 msgId"). cs/inbox 키 하나를 넣으세요.'); return; }
+  var inbox = fbGet('cs/inbox/' + msgId);
+  if (!inbox) { Logger.log('inbox 없음: ' + msgId); return; }
+  var allInbox = fbGet('cs/inbox') || {}, allDrafts = fbGet('cs/drafts') || {};
+  _diagRaw = true;
+  try {
+    var d = claudeDraft_(inbox, retrieveExamples_(inbox), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts));
+    Logger.log('파싱된 tasks[] = ' + JSON.stringify(d.tasks || []));
+    Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
+  } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
+  finally { _diagRaw = false; }
 }
 
 // ---- 매핑: cs/inbox.bookingId(원번호) ↔ pendingBookings.channelBookingId ----

@@ -148,6 +148,25 @@ button{font-family:inherit;}
 .tk-meta{font-size:9.5px;color:var(--muted);margin-left:2px;}
 .tk-text{font-size:13.5px;color:var(--ink);margin-bottom:10px;line-height:1.5;}
 .card.tk-is-done .tk-text{color:var(--muted);text-decoration:line-through;}
+/* 예약 스레드 그룹 카드 */
+.card.grp{padding:0;overflow:hidden;}
+.grp-head{padding:11px 13px 9px;border-bottom:1px solid var(--line);background:var(--paper);}
+.grp-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
+.grp-line .guest{font-weight:700;font-size:14.5px;}
+.thr-n{font-family:var(--mono);font-size:8.5px;font-weight:700;color:#fff;background:var(--ink2);border-radius:100px;padding:1.5px 8px;margin-left:auto;}
+.grp-head .stayline{margin-bottom:0;}
+.thr-toggle{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--night);background:none;border:none;cursor:pointer;padding:2px 0;}
+.thr-toggle:active{opacity:.6;}
+/* 시간순 말풍선 */
+.thread{padding:11px 13px;display:flex;flex-direction:column;gap:8px;background:var(--paper);border-bottom:1px solid var(--line);}
+.bub{max-width:82%;font-size:12.5px;line-height:1.5;padding:8px 11px;border-radius:12px;white-space:pre-line;word-break:break-word;}
+.bub-t{font-family:var(--mono);font-size:8px;color:var(--muted);margin-bottom:3px;letter-spacing:.5px;}
+.bub-g{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:3px;color:var(--ink);}
+.bub-us{align-self:flex-end;background:var(--go-soft);border:1px solid #BEE3D2;border-bottom-right-radius:3px;color:var(--ink);}
+/* 답변 영역(그룹 안) */
+.ans{padding:12px 13px;}
+.ans-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+.ans-top .who{font-size:9px;letter-spacing:1px;color:var(--muted);font-weight:700;}
 .btns{display:flex;gap:7px;}
 .b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
 .b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
@@ -293,6 +312,7 @@ let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
 let optimisticSaved=new Set(); // (2) 승인 즉시 '저장됨' 낙관적 표시 id (Firebase 왕복 대기 없이 체감 즉시)
+let expandedGroups=new Set(); // 예약 스레드 펼침 상태(재렌더 넘어 유지)
 
 // ── 로그인 ──
 async function doLogin(){
@@ -369,16 +389,47 @@ function toneScoreRow(id){
 }
 function setTone(id,n){ selfScores[id] = (selfScores[id]===n ? 0 : n); renderWait(); } // 같은 칸 재탭 = 해제
 
-function draftCard(id,d){
+// ── 예약 단위 그룹핑 (같은 bookingId, 없으면 threadId, 둘 다 없으면 msgId 단건) ──
+function groupKey(d){ return (d && d.bookingId && ('b'+d.bookingId)) || (d && d.threadId && ('t'+d.threadId)) || null; }
+function buildGroups(entries){
+  const map={};
+  entries.forEach(([id,d])=>{ const gk=groupKey(d)||('m'+id); (map[gk]||(map[gk]={key:gk,items:[]})).items.push([id,d]); });
+  const arr=Object.keys(map).map(k=>map[k]);
+  arr.forEach(g=>{ g.items.sort((a,b)=>msgTimeMs(a[1])-msgTimeMs(b[1])); g.latest=g.items[g.items.length-1]; }); // 시간순(오래된→최신)
+  return arr;
+}
+const CHAN_LABEL={booking:'Booking',agoda:'Agoda',expedia:'Expedia'};
+function platformBadge(d){ const c=d&&d.channel; return c?'<span class="chan">'+esc(CHAN_LABEL[c]||c)+'</span>':''; }
+// 그룹 헤더: 게스트 · 플랫폼 · 방 · 숙박일자 · [대화 N] · (N>1이면) 펼침 토글
+function groupHeader(g, head){
+  const N=g.items.length, expanded=expandedGroups.has(g.key);
+  const toggle = N>1 ? '<button class="thr-toggle" onclick="toggleGroup(\''+g.key+'\')">'+(expanded?'대화 접기 ▴':'이전 대화 '+(N-1)+' ▾')+'</button>' : '';
+  return '<div class="grp-head">'+
+    '<div class="grp-line"><span class="guest">'+esc(head.guest||'게스트')+'</span>'+platformBadge(head)+
+      '<span class="lang">'+esc(String(head.lang||'—').toUpperCase())+'</span>'+
+      '<span class="thr-n">대화 '+N+'</span></div>'+
+    '<div class="stayline"><span class="rm">'+esc(head.room||'미상')+'</span> · '+esc(stayLabel(head))+toggle+'</div>'+
+  '</div>';
+}
+// 시간순 말풍선(좌=게스트 원문, 우=우리 답변[답한 것만]). items = [[id,d],...]
+function bubbleTimeline(items){
+  return '<div class="thread">'+items.map(([id,d])=>{
+    const g='<div class="bub bub-g"><div class="bub-t">'+esc(fmtKST(d.receivedAt||d.createdAt))+'</div>'+esc(d.origMsg||'—')+'</div>';
+    const answered=(d.status==='saved'||d.status==='sent'||d.status==='approved'||isSavedView(id,d));
+    const ans=answered?String(d.finalReply||d.reply||'').replace(IMG_RE,'').trim():'';
+    return g+(ans?'<div class="bub bub-us">'+esc(ans)+'</div>':'');
+  }).join('')+'</div>';
+}
+// 답변 대상(최신 초안)의 답변 영역 — 원문+초안+번역+자기평가+액션 (게스트/숙박 메타는 그룹헤더가 담당).
+function answerBody(id,d){
   const st=d.status||'pending';
   const imgs=extractImgs(d.reply);
-  const baseReply=String(d.reply||'');
-  const replyShown=imgs.length?stripImgs(d.reply):baseReply;
+  const replyShown=imgs.length?stripImgs(d.reply):String(d.reply||'');
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
   const editing=editingIds.has(id);
-  const editVal=(edits[id]!=null)?edits[id]:baseReply;
-
+  const editVal=(edits[id]!=null)?edits[id]:String(d.reply||'');
   const saveFailed=(learnMode && st==='approved' && d.saveError);
+
   let right;
   if(saveFailed) right='<span class="status error">저장 실패</span>';
   else if(st==='approved') right='<span class="status approved"><span class="spinner"></span>'+(learnMode?'저장 중…':'발송 대기중')+'</span>';
@@ -405,10 +456,8 @@ function draftCard(id,d){
   const editArea=(st==='pending'&&editing)
     ? '<textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
 
-  return '<div class="card">'+
-    '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
-      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+right+'</div>'+
-    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · '+esc(stayLabel(d))+'</div>'+
+  return '<div class="ans">'+
+    '<div class="ans-top"><div class="who">답할 문의</div>'+cat+right+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
     '<div class="draft"><div class="who">초안 · <b>학습된 말투</b>'+(d.autoApproved?'<span class="auto-badge">자동</span>':'')+'</div>'+
       '<div class="reply">'+esc(replyShown||'—')+'</div>'+
@@ -416,10 +465,11 @@ function draftCard(id,d){
       (imgs.length?thumbsHtml(imgs):'')+
     '</div>'+
     editArea+
-    toneScoreRow(id)+
+    (st==='pending'?toneScoreRow(id):'')+
     actions+
   '</div>';
 }
+function toggleGroup(key){ if(expandedGroups.has(key)) expandedGroups.delete(key); else expandedGroups.add(key); renderWait(); renderSent(); }
 // 숙박일자 라벨(Q1). checkin/checkoutDate(YYYY-MM-DD) → "M/D–M/D". 없으면 '숙박일자 미상'.
 function md(iso){ if(!iso) return null; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?(Number(m[2])+'/'+Number(m[3])):null; }
 function stayLabel(d){ const ci=md(d&&d.checkinDate), co=md(d&&d.checkoutDate);
@@ -442,76 +492,98 @@ function waitCmpDesc(a,b){ return msgTimeMs(b[1])-msgTimeMs(a[1]); }
 function fmtKST(iso){ if(!iso) return '—'; const t=Date.parse(iso); if(isNaN(t)) return '—'; const k=new Date(t+9*3600000);
   return (k.getUTCMonth()+1)+'/'+k.getUTCDate()+' '+String(k.getUTCHours()).padStart(2,'0')+':'+String(k.getUTCMinutes()).padStart(2,'0'); }
 
+// 답할 대상인가(대기 액션 필요): pending/error & 낙관 저장 아님
+function isActionable_(id,d){ const s=d.status||'pending'; return (s==='pending'||s==='error') && !isSavedView(id,d); }
 function renderWait(){
   const list=document.getElementById('waitList');
   const empty=document.getElementById('emptyWait');
   const bulkBar=document.getElementById('bulkBar');
-  const inflight=['pending','approved','sending','error']; // dismissed·sent 제외
-  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
-    .filter(([k,d])=> d && inflight.indexOf(d.status||'pending')>=0 && !isSavedView(k,d)); // (2) 낙관적 저장분은 학습됨으로 이동
-  // 대기 카운터 = 조작 필요 건(pending + error) — dismissed 제외
-  const actionable=entries.filter(([k,d])=>{const s=d.status||'pending';return s==='pending'||s==='error';}).length;
-  document.getElementById('nWait').textContent=actionable;
-  document.getElementById('tWait').textContent=actionable;
-  // 일괄 dismiss 대상 = 오늘 0시(KST) 이전 수신한 pending 초안
+  // 타임라인 대상 = dismissed·sent 제외한 모든 대화 메시지(답한 것 포함해 맥락으로 표시)
+  const convo=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
+    .filter(([k,d])=> d && (d.status||'pending')!=='dismissed' && d.status!=='sent');
+  // 대기 카운터 = 조작 필요 '건'(메시지 단위, dismissed 제외)
+  const actionableEntries=convo.filter(([k,d])=>isActionable_(k,d));
+  document.getElementById('nWait').textContent=actionableEntries.length;
+  document.getElementById('tWait').textContent=actionableEntries.length;
+  // 일괄 dismiss 대상 = 오늘 0시(KST) 이전 수신한 pending(메시지 단위)
   const threshold=kstDayStartMs(Date.now());
-  const staleN=entries.filter(([k,d])=>(d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold).length;
+  const staleN=actionableEntries.filter(([k,d])=>(d.status||'pending')==='pending' && msgTimeMs(d)>0 && msgTimeMs(d)<threshold).length;
   bulkBar.innerHTML = staleN
     ? '<div class="bulkbar"><div class="t"><b>지난 문의 '+staleN+'건</b> — 오늘 0시(KST) 이전 수신분. 카테고리별 질문 분류로 정리하고 한 번에 치웁니다(답변 학습 아님).</div>'+
       '<button onclick="bulkDismiss()">모두 지난 처리</button></div>'
     : '';
-  if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  // 예약 단위 그룹핑 → 답할 초안이 하나라도 있는 그룹만 대기에 표시
+  const groups=buildGroups(convo).filter(g=> g.items.some(([k,d])=>isActionable_(k,d)));
+  if(!groups.length){ list.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
-  list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
+  groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1])); // 최근 대화 위로
+  list.innerHTML=groups.map(g=>{
+    // 답변 대상 = 그룹 내 최신 actionable 초안
+    const acts=g.items.filter(([k,d])=>isActionable_(k,d));
+    const target=acts[acts.length-1]||g.latest;
+    const head=target[1]; // 헤더 정보(게스트·방·숙박·플랫폼)는 대상 기준
+    const expanded=expandedGroups.has(g.key);
+    const prior=g.items.filter(([k,d])=>k!==target[0]); // 대상 제외한 이전 대화
+    const timeline=(expanded && prior.length)?bubbleTimeline(prior):'';
+    return '<div class="card grp">'+groupHeader(g,head)+timeline+answerBody(target[0],target[1])+'</div>';
+  }).join('');
 }
 
-// 학습모드: 저장분(status==='saved' + 낙관적 승인)을 '학습됨' 탭에 / 실발송 모드: status==='sent'를 '보냄' 탭에
+// 학습모드: 저장분(saved+낙관)을 예약 단위로 '학습됨' 탭에(접힘=최신 저장분, 펼침=전체 말풍선).
+//   실발송 모드: status==='sent'를 '보냄' 탭에(그룹 없이 간단).
 function renderSent(){
   const list=document.getElementById('sentList'); if(!list) return;
-  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
-    .filter(([k,d])=> d && (learnMode ? isSavedView(k,d) : d.status==='sent'));
   const lbl=document.getElementById('tSentLbl'); if(lbl) lbl.textContent=learnMode?'학습됨':'보냄';
-  const t=document.getElementById('tSent'); if(t) t.textContent=entries.length||'—';
-  if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">'+(learnMode?'저장된 학습 답변 없음':'보낸 초안 없음')+'</div>'+(learnMode?'승인·저장된 답변이 여기 쌓입니다.':'승인·발송된 답변이 여기 쌓입니다.')+'</div>'; return; }
-  entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
-  list.innerHTML=entries.map(([k,d])=>sentCard(k,d)).join('');
-}
-// (3) 학습됨 카드 = 대기 카드와 동일 구조(원문 + 최종 저장 텍스트 + 번역 + 자기평가), 읽기전용.
-function sentCard(id,d){
-  if(!learnMode){ // 실발송 모드: 기존 간단 SENT 카드
-    const s=String(d.finalReply||d.reply||'').replace(IMG_RE,'').replace(/\s+/g,' ').trim();
-    return '<div class="card"><div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
-      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
-      (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
-      '<span class="time">'+esc(fmtTime(d.sentAt)+' 발송')+'</span></div>'+
-      '<div class="msg sent-body"><div class="who">SENT</div><div class="body">'+esc(s.slice(0,120)+(s.length>120?'…':'')||'—')+'</div></div></div>';
+  const t=document.getElementById('tSent');
+  if(!learnMode){
+    const sent=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status==='sent');
+    if(t) t.textContent=sent.length||'—';
+    if(!sent.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
+    sent.sort(waitCmpDesc); list.innerHTML=sent.map(([k,d])=>sentSimple(k,d)).join(''); return;
   }
+  const saved=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&isSavedView(k,d));
+  if(t) t.textContent=saved.length||'—';
+  if(!saved.length){ list.innerHTML='<div class="empty"><div class="big">저장된 학습 답변 없음</div>승인·저장된 답변이 여기 쌓입니다.</div>'; return; }
+  // 그룹 맥락 = 저장분이 있는 예약의 비-dismissed 대화 전체
+  const convo=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&(d.status||'pending')!=='dismissed'&&d.status!=='sent');
+  const savedKeys={}; saved.forEach(([k,d])=>{ savedKeys[groupKey(d)||('m'+k)]=true; });
+  const groups=buildGroups(convo).filter(g=>savedKeys[g.key]);
+  groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1]));
+  list.innerHTML=groups.map(g=>{
+    const savedItems=g.items.filter(([k,d])=>isSavedView(k,d));
+    const latest=savedItems[savedItems.length-1]||g.latest;
+    const expanded=expandedGroups.has(g.key);
+    const body = expanded ? bubbleTimeline(g.items) : sentDetail(latest[0],latest[1]);
+    return '<div class="card grp">'+groupHeader(g,latest[1])+body+'</div>';
+  }).join('');
+}
+// (3) 학습됨 저장분 상세(원문 + 최종 저장 텍스트/수정본 + 번역 + 자기평가), 읽기전용. 그룹헤더가 게스트/숙박 담당.
+function sentDetail(id,d){
   const final=String(d.finalReply||d.reply||'');
   const imgs=extractImgs(final);
   const shown=(imgs.length?stripImgs(final):final).trim();
   const edited=!!d.editedByClara;
-  const whoLbl = edited?'내 답변 · 수정본':'학습된 말투';
-  const pending = d.status!=='saved'; // 낙관적(아직 GAS 저장 확정 전)
-  const stamp = d.savedAt ? (fmtKST(d.savedAt)+' 저장') : '저장 중…';
-  const cat = d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
-  const score = (d.claraToneScore!=null && d.claraToneScore>0)?d.claraToneScore:0;
-  return '<div class="card">'+
-    '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
-      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+
-      (edited?'<span class="edited-badge">수정본</span>':'')+
-      '<span class="time">'+esc(stamp)+'</span></div>'+
-    '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · '+esc(stayLabel(d))+'</div>'+
+  const whoLbl=edited?'내 답변 · 수정본':'학습된 말투';
+  const stamp=d.savedAt?(fmtKST(d.savedAt)+' 저장'):'저장 중…';
+  const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
+  const score=(d.claraToneScore!=null&&d.claraToneScore>0)?d.claraToneScore:0;
+  return '<div class="ans">'+
+    '<div class="ans-top"><div class="who">저장된 답변</div>'+cat+(edited?'<span class="edited-badge">수정본</span>':'')+'<span class="time">'+esc(stamp)+'</span></div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    '<div class="draft"><div class="who">'+esc(whoLbl)+'</div>'+
-      '<div class="reply">'+esc(shown||'—')+'</div>'+
-      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
-      (imgs.length?thumbsHtml(imgs):'')+
-    '</div>'+
+    '<div class="draft"><div class="who">'+esc(whoLbl)+'</div><div class="reply">'+esc(shown||'—')+'</div>'+
+      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+(imgs.length?thumbsHtml(imgs):'')+'</div>'+
     '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+
-      [1,2,3,4,5].map(i=>'<span class="tcell'+(i<=score?' f':'')+'"></span>').join('')+
-      '</div><span class="tnote">'+(score?score+'/5':'미평가')+'</span></div>'+
+      [1,2,3,4,5].map(i=>'<span class="tcell'+(i<=score?' f':'')+'"></span>').join('')+'</div>'+
+      '<span class="tnote">'+(score?score+'/5':'미평가')+'</span></div>'+
   '</div>';
+}
+function sentSimple(id,d){
+  const s=String(d.finalReply||d.reply||'').replace(IMG_RE,'').replace(/\s+/g,' ').trim();
+  return '<div class="card"><div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
+    '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
+    (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
+    '<span class="time">'+esc(fmtTime(d.sentAt)+' 발송')+'</span></div>'+
+    '<div class="msg sent-body"><div class="who">SENT</div><div class="body">'+esc(s.slice(0,120)+(s.length>120?'…':'')||'—')+'</div></div></div>';
 }
 
 // ── (4) 업무 탭 (cs/tasks) ──
@@ -699,7 +771,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
-window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone;
+window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup;
 </script>
 </body>
 </html>
