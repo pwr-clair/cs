@@ -794,8 +794,11 @@ var CLARA_SYSTEM =
   '[안내 이미지 링크] 관련된 문의일 때만 아래 URL을 답변(reply)에 플레인텍스트 전체 URL로 자연스럽게 포함하세요(마크다운·대괄호 금지, 강제 삽입 금지, 관련 없으면 넣지 말 것):\n' +
   '- 셔틀/오시는길/공항 이동 문의: https://pwr-clair.github.io/cs/assets/images/Map-shuttle-overview.jpeg (공항↔숙소 전체 경로), https://pwr-clair.github.io/cs/assets/images/map-to-airport.png (숙소→버스정류장 도보)\n' +
   '- 건물을 못 찾거나 첫 도착 안내: https://pwr-clair.github.io/cs/assets/images/Building.jpg (건물 외관), https://pwr-clair.github.io/cs/assets/images/Elevator-1st-floor-01.jpeg (1층 엘리베이터)\n' +
+  '[이전 대화 맥락] 사용자 메시지에 [이 예약의 이전 대화]가 함께 오면 반드시 그 흐름을 이어서 답하세요. ' +
+  '이미 안내한 내용(도착/셔틀/체크인 등)을 반복하지 말고, 게스트가 짧은 감사·확인("thanks","ok","감사합니다")만 보냈으면 도착 안내 풀세트를 다시 붙이지 말고 짧고 따뜻하게 화답하세요. 새 질문에만 새 정보로 답합니다.\n' +
+  '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
   '응답은 반드시 JSON 하나로만 출력: ' +
-  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자}. ' +
+  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자, "tasks": [{"text": 한국어 할 일, "dueHint": 시점힌트}]}. ' +
   'JSON 외 다른 텍스트를 출력하지 마세요.';
 
 // ---- (2) 초안 생성 파이프라인: 신규 inbox → cs/drafts ----
@@ -807,16 +810,51 @@ function processInboxToDrafts() {
     var id = ids[i], rec = inbox[id];
     if (!rec || rec.parseFailed) continue; // 파싱 실패건은 초안 생략(수동 처리)
     if (drafts[id]) continue;              // 이미 초안 있음(멱등)
-    try { makeDraftFor_(id, rec); made++; }
+    try { makeDraftFor_(id, rec, inbox, drafts); made++; } // (1)(4) 같은 run의 inbox·drafts 맵 전달(추가 fetch 없음)
     catch (e) { Logger.log('draft 실패 ' + id + ': ' + e); }
   }
   if (made) Logger.log('drafts 생성: ' + made + '건');
 }
 
-function makeDraftFor_(msgId, inbox) {
+// (1) 같은 예약의 이전 대화 이력 → 프롬프트용 트랜스크립트(추가 Claude 호출 없음).
+//   그룹핑: 같은 bookingId(있으면) 또는 같은 threadId. 현재 메시지보다 receivedAt 이른 것만, 시간순.
+//   게스트 메시지(inbox.parsed.message) + 우리 답(drafts.finalReply, saved/sent/approved) 짝을 순서대로.
+function retrieveThreadHistory_(msgId, cur, allInbox, allDrafts) {
+  if (!allInbox) return '';
+  var curBid = cur.bookingId, curTid = cur.threadId, curAt = Date.parse(cur.receivedAt || '') || Infinity;
+  var items = [];
+  var ids = Object.keys(allInbox);
+  for (var i = 0; i < ids.length; i++) {
+    var oid = ids[i]; if (oid === msgId) continue;
+    var o = allInbox[oid]; if (!o) continue;
+    var sameBooking = curBid && o.bookingId && String(o.bookingId) === String(curBid);
+    var sameThread  = curTid && o.threadId && String(o.threadId) === String(curTid);
+    if (!sameBooking && !sameThread) continue;
+    var at = Date.parse(o.receivedAt || '') || 0;
+    if (at >= curAt) continue;                       // 현재 메시지 이후/동시는 제외(과거만)
+    var gmsg = (o.parsed && o.parsed.message) || '';
+    var ans = '';
+    var od = allDrafts && allDrafts[oid];
+    if (od && (od.status === 'saved' || od.status === 'sent' || od.status === 'approved'))
+      ans = od.finalReply || od.editedReply || od.reply || '';
+    if (gmsg || ans) items.push({ at: at, gmsg: gmsg, ans: ans });
+  }
+  if (!items.length) return '';
+  items.sort(function (a, b) { return a.at - b.at; });
+  if (items.length > 6) items = items.slice(items.length - 6); // 최근 6개만(프롬프트 비용 캡)
+  var lines = [];
+  for (var k = 0; k < items.length; k++) {
+    if (items[k].gmsg) lines.push('게스트: ' + items[k].gmsg);
+    if (items[k].ans)  lines.push('클라라(우리): ' + items[k].ans);
+  }
+  return lines.join('\n');
+}
+
+function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   var examples = retrieveExamples_(inbox);
-  var d = claudeDraft_(inbox, examples);
-  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room} 또는 null
+  var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
+  var d = claudeDraft_(inbox, examples, history);                          // 초안 호출 1회에 이력·태스크 통합
+  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room, checkinDate, checkoutDate} 또는 null
 
   var rec = {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -832,14 +870,36 @@ function makeDraftFor_(msgId, inbox) {
     // 숙박일자: HK app/pendingBookings(방번호와 동일 경로) 우선, 파서(inbox)값 폴백, 둘 다 없으면 null→'미상'.
     checkinDate: (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null,
     checkoutDate: (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null,
+    hasHistory: !!history,                       // 맥락 참조 여부(DESK 표시·디버그용)
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
   };
   fbSet('cs/drafts/' + msgId, rec);
 
-  // (3) 텔레그램 푸시
+  // (4) 업무 후보 저장 — 같은 초안 호출이 반환한 tasks[]를 cs/tasks 에 status='proposed'로 적재(추가 호출 없음).
+  saveTaskCandidates_(msgId, d.tasks, rec);
+
+  // 텔레그램 푸시
   var first = (((inbox.parsed && inbox.parsed.message) || '').split('\n')[0] || '').trim();
   if (first.length > 40) first = first.slice(0, 40) + '…';
   tgNotify_('[PWR CS] ' + (inbox.guest || '게스트') + ' (' + (rec.room || '미상') + ') ' + first + ' → 초안 대기');
+}
+
+// (4) tasks[] → cs/tasks/{msgId_tN} (status='proposed'). 방번호·예약·게스트는 우리 데이터로 보강.
+//   멱등: makeDraftFor_ 는 초안당 1회만 실행(drafts[id] 가드)이라 태스크도 1회만 적재.
+function saveTaskCandidates_(msgId, tasks, rec) {
+  if (!tasks || !tasks.length) return;
+  var now = new Date().toISOString(), n = 0;
+  for (var i = 0; i < tasks.length; i++) {
+    var t = tasks[i]; if (!t) continue;
+    var text = String(t.text || '').trim(); if (!text) continue;
+    fbSet('cs/tasks/' + msgId + '_t' + i, {
+      text: text, dueHint: String(t.dueHint || '').trim() || null,
+      room: rec.room || null, bookingId: rec.bookingId || null, guest: rec.guest || null,
+      msgId: msgId, lang: rec.lang || null, status: 'proposed', createdAt: now
+    });
+    n++;
+  }
+  if (n) Logger.log('업무 후보 저장: ' + n + '건 (msg ' + msgId + ')');
 }
 
 // (2b) 1회성 백필: receivedAt 없는 기존 draft에 inbox의 receivedAt 승계.
@@ -951,7 +1011,8 @@ function retrieveExamples_(inbox) {
 }
 
 // Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
-function claudeDraft_(inbox, examples) {
+//   history(있으면) = 같은 예약 이전 대화 트랜스크립트 → 프롬프트에 얹어 맥락 반영(호출 수 불변, 1회).
+function claudeDraft_(inbox, examples, history) {
   var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
 
@@ -959,8 +1020,9 @@ function claudeDraft_(inbox, examples) {
   for (var i = 0; i < examples.length; i++)
     ex += '상황: ' + (examples[i]['상황요약'] || '') + '\n답변: ' + (examples[i]['최종답변'] || '') + '\n---\n';
   var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
-  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') +
-             '\n[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
+  var hist = history ? ('[이 예약의 이전 대화] (시간순, 이미 안내한 내용 반복 금지)\n' + history + '\n\n') : '';
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + hist +
+             '[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
              '\n\n위 지침대로 JSON만 출력하세요.';
 
   var payload = { model: CLAUDE_MODEL, max_tokens: CLAUDE_MAXTOK, system: CLARA_SYSTEM,
@@ -978,8 +1040,20 @@ function claudeDraft_(inbox, examples) {
   return {
     reply: obj.reply || '', replyKo: obj.replyKo || '',
     category: obj.category || '기타',
-    confidence: (typeof obj.confidence === 'number' ? obj.confidence : null)
+    confidence: (typeof obj.confidence === 'number' ? obj.confidence : null),
+    tasks: sanitizeTasks_(obj.tasks) // (4) 업무 후보 배열(없으면 [])
   };
+}
+// 모델이 준 tasks[] 정제: 배열·객체·text 유효한 것만, 최대 5개.
+function sanitizeTasks_(tasks) {
+  if (!tasks || Object.prototype.toString.call(tasks) !== '[object Array]') return [];
+  var out = [];
+  for (var i = 0; i < tasks.length && out.length < 5; i++) {
+    var t = tasks[i]; if (!t || typeof t !== 'object') continue;
+    var text = String(t.text || '').trim(); if (!text) continue;
+    out.push({ text: text, dueHint: String(t.dueHint || '').trim() });
+  }
+  return out;
 }
 function extractJson_(s) {
   var i = s.indexOf('{'), j = s.lastIndexOf('}');

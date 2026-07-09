@@ -138,6 +138,16 @@ button{font-family:inherit;}
 .tone .tcell.f{background:var(--night);border-color:var(--night);}
 .tone .tnote{font-size:9px;color:var(--muted);}
 .sw.locked{opacity:.55;cursor:not-allowed;}
+/* 업무 탭 카드 */
+.card.tk{padding:12px 13px;}
+.card.tk .meta{margin-bottom:7px;}
+.tk-badge{font-size:8.5px;font-weight:700;border-radius:100px;padding:1.5px 8px;}
+.tk-badge.tk-prop{background:var(--night-soft);color:var(--night);}
+.tk-badge.tk-act{background:var(--amber-soft);color:var(--amber);}
+.tk-badge.tk-done{background:var(--go-soft);color:var(--go);}
+.tk-meta{font-size:9.5px;color:var(--muted);margin-left:2px;}
+.tk-text{font-size:13.5px;color:var(--ink);margin-bottom:10px;line-height:1.5;}
+.card.tk-is-done .tk-text{color:var(--muted);text-decoration:line-through;}
 .btns{display:flex;gap:7px;}
 .b{flex:1;padding:10px 4px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
 .b.go{background:var(--go);border-color:var(--go);color:#fff;flex:1.6;}
@@ -200,7 +210,7 @@ button{font-family:inherit;}
     <span class="auto-flag" id="autoFlag">⚡ 자동발송 ON</span>
     <div class="b-row">
       <div class="tile t-wait"><div class="n" id="nWait">0</div><div class="l">대기</div></div>
-      <div class="tile t-task"><div class="n">—</div><div class="l">업무</div></div>
+      <div class="tile t-task"><div class="n" id="nTask">—</div><div class="l">업무</div></div>
       <div class="tile t-sugg"><div class="n">—</div><div class="l">제안</div></div>
       <div class="tile t-rate"><div class="n">—</div><div class="l">무수정 승인</div></div>
     </div>
@@ -222,7 +232,7 @@ button{font-family:inherit;}
 
   <div class="tabs">
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
-    <button class="tab" onclick="showTab(1,this)">업무<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">—</span></button>
     <button class="tab" onclick="showTab(2,this)">제안<span class="n">—</span></button>
     <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
     <button class="tab" onclick="showTab(4,this)"><span id="tSentLbl">보냄</span><span class="n" id="tSent">—</span></button>
@@ -235,8 +245,11 @@ button{font-family:inherit;}
     <div class="empty" id="emptyWait" style="display:none;"><div class="big">대기 중인 초안 없음</div>새 초안이 생성되면 여기에 표시됩니다.</div>
   </div>
 
-  <!-- 나머지 탭: 이번 단계(M2b-1) 범위 밖 — 다음 단계 연동 -->
-  <div class="pane" id="p1"><div class="empty"><div class="big">M2b-2 / M3</div>업무 탭은 이후 단계에서 연동됩니다.</div></div>
+  <!-- 업무 (cs/tasks — 엔진 후보 추출, 클라라 승인/기각/완료) -->
+  <div class="pane" id="p1">
+    <div id="taskList"></div>
+    <div class="empty" id="emptyTask" style="display:none;"><div class="big">업무 후보 없음</div>게스트 문의에 나중에 처리할 요청이 있으면 여기에 후보로 올라옵니다.</div>
+  </div>
   <div class="pane" id="p2"><div class="empty"><div class="big">M2b-2 / M3</div>제안 탭은 이후 단계에서 연동됩니다.</div></div>
   <div class="pane" id="p3"><div class="empty"><div class="big">M2b-2 / M3</div>후기 탭은 이후 단계에서 연동됩니다.</div></div>
   <div class="pane" id="p4"><div id="sentList"></div></div>
@@ -276,8 +289,10 @@ const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local
 let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
 let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
+let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let edits={}, editingIds=new Set(); // 인라인 수정 상태(재렌더 넘어 유지)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
+let optimisticSaved=new Set(); // (2) 승인 즉시 '저장됨' 낙관적 표시 id (Firebase 왕복 대기 없이 체감 즉시)
 
 // ── 로그인 ──
 async function doLogin(){
@@ -315,15 +330,22 @@ onAuthStateChanged(auth, (user)=>{
 
 function startListeners(){
   const permErr = (path)=> (e)=>{ toast('읽기 권한 오류: '+path+' — Firebase 규칙 확인'); };
-  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
+  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; reconcileOptimistic(); if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
+  onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderSent(); renderAuto(); renderBudget(); }
+function renderAll(){ renderWait(); renderSent(); renderTasks(); renderAuto(); renderBudget(); }
+// (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
+function reconcileOptimistic(){
+  optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
+}
+// 카드가 '저장됨'으로 보여야 하나: 실제 saved || (낙관 승인 && approved && 실패없음)
+function isSavedView(id,d){ return d && (d.status==='saved' || (optimisticSaved.has(id) && d.status==='approved' && !d.saveError)); }
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -426,7 +448,7 @@ function renderWait(){
   const bulkBar=document.getElementById('bulkBar');
   const inflight=['pending','approved','sending','error']; // dismissed·sent 제외
   const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
-    .filter(([k,d])=> d && inflight.indexOf(d.status||'pending')>=0);
+    .filter(([k,d])=> d && inflight.indexOf(d.status||'pending')>=0 && !isSavedView(k,d)); // (2) 낙관적 저장분은 학습됨으로 이동
   // 대기 카운터 = 조작 필요 건(pending + error) — dismissed 제외
   const actionable=entries.filter(([k,d])=>{const s=d.status||'pending';return s==='pending'||s==='error';}).length;
   document.getElementById('nWait').textContent=actionable;
@@ -444,34 +466,96 @@ function renderWait(){
   list.innerHTML=entries.map(([k,d])=>draftCard(k,d)).join('');
 }
 
-// 학습모드: status==='saved'(학습 저장분)을 '학습됨' 탭에 / 실발송 모드: status==='sent'를 '보냄' 탭에
+// 학습모드: 저장분(status==='saved' + 낙관적 승인)을 '학습됨' 탭에 / 실발송 모드: status==='sent'를 '보냄' 탭에
 function renderSent(){
   const list=document.getElementById('sentList'); if(!list) return;
-  const want = learnMode ? 'saved' : 'sent';
-  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status===want);
+  const entries=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
+    .filter(([k,d])=> d && (learnMode ? isSavedView(k,d) : d.status==='sent'));
   const lbl=document.getElementById('tSentLbl'); if(lbl) lbl.textContent=learnMode?'학습됨':'보냄';
   const t=document.getElementById('tSent'); if(t) t.textContent=entries.length||'—';
   if(!entries.length){ list.innerHTML='<div class="empty"><div class="big">'+(learnMode?'저장된 학습 답변 없음':'보낸 초안 없음')+'</div>'+(learnMode?'승인·저장된 답변이 여기 쌓입니다.':'승인·발송된 답변이 여기 쌓입니다.')+'</div>'; return; }
   entries.sort(waitCmpDesc); // 게스트 수신 시각 최신순
   list.innerHTML=entries.map(([k,d])=>sentCard(k,d)).join('');
 }
+// (3) 학습됨 카드 = 대기 카드와 동일 구조(원문 + 최종 저장 텍스트 + 번역 + 자기평가), 읽기전용.
 function sentCard(id,d){
+  if(!learnMode){ // 실발송 모드: 기존 간단 SENT 카드
+    const s=String(d.finalReply||d.reply||'').replace(IMG_RE,'').replace(/\s+/g,' ').trim();
+    return '<div class="card"><div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
+      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
+      (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
+      '<span class="time">'+esc(fmtTime(d.sentAt)+' 발송')+'</span></div>'+
+      '<div class="msg sent-body"><div class="who">SENT</div><div class="body">'+esc(s.slice(0,120)+(s.length>120?'…':'')||'—')+'</div></div></div>';
+  }
   const final=String(d.finalReply||d.reply||'');
-  const shown=final.replace(IMG_RE,'').trim();
+  const imgs=extractImgs(final);
+  const shown=(imgs.length?stripImgs(final):final).trim();
   const edited=!!d.editedByClara;
-  const whoLbl = learnMode ? (edited?'내 답변 · 수정본':'학습된 말투') : 'SENT';
-  const stamp = learnMode ? (fmtKST(d.savedAt)+' 저장') : (fmtTime(d.sentAt)+' 발송');
-  const scoreBadge = (d.claraToneScore!=null && d.claraToneScore>0)?'<span class="edited-badge">말투 '+esc(String(d.claraToneScore))+'/5</span>':'';
+  const whoLbl = edited?'내 답변 · 수정본':'학습된 말투';
+  const pending = d.status!=='saved'; // 낙관적(아직 GAS 저장 확정 전)
+  const stamp = d.savedAt ? (fmtKST(d.savedAt)+' 저장') : '저장 중…';
+  const cat = d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
+  const score = (d.claraToneScore!=null && d.claraToneScore>0)?d.claraToneScore:0;
   return '<div class="card">'+
     '<div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
-      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
-      (d.autoApproved?'<span class="auto-badge">자동</span>':'')+
-      (edited?'<span class="edited-badge">수정본</span>':'')+scoreBadge+
+      '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+cat+
+      (edited?'<span class="edited-badge">수정본</span>':'')+
       '<span class="time">'+esc(stamp)+'</span></div>'+
     '<div class="stayline"><span class="rm">'+esc(d.room||'미상')+'</span> · '+esc(stayLabel(d))+'</div>'+
-    '<div class="msg sent-body"><div class="who">'+esc(whoLbl)+'</div><div class="body">'+esc(shown||'—')+'</div></div>'+
+    '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
+    '<div class="draft"><div class="who">'+esc(whoLbl)+'</div>'+
+      '<div class="reply">'+esc(shown||'—')+'</div>'+
+      (d.replyKo?'<div class="gloss">'+esc(d.replyKo)+'</div>':'')+
+      (imgs.length?thumbsHtml(imgs):'')+
+    '</div>'+
+    '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+
+      [1,2,3,4,5].map(i=>'<span class="tcell'+(i<=score?' f':'')+'"></span>').join('')+
+      '</div><span class="tnote">'+(score?score+'/5':'미평가')+'</span></div>'+
   '</div>';
 }
+
+// ── (4) 업무 탭 (cs/tasks) ──
+const TASK_ORDER={proposed:0,active:1,done:2};
+function taskCmp(a,b){ const sa=TASK_ORDER[a[1].status]??9, sb=TASK_ORDER[b[1].status]??9;
+  if(sa!==sb) return sa-sb;
+  const da=String(a[1].dueHint||''), db2=String(b[1].dueHint||''); if(da!==db2) return da<db2?-1:1;
+  return String(a[1].room||'').localeCompare(String(b[1].room||'')); }
+function renderTasks(){
+  const list=document.getElementById('taskList'), empty=document.getElementById('emptyTask'); if(!list) return;
+  const entries=Object.keys(tasks||{}).map(k=>[k,tasks[k]]).filter(([k,t])=>t && t.status!=='rejected');
+  const actionable=entries.filter(([k,t])=>t.status==='proposed'||t.status==='active').length;
+  const nT=document.getElementById('nTask'); if(nT) nT.textContent=actionable;
+  const tT=document.getElementById('tTask'); if(tT) tT.textContent=actionable;
+  if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  entries.sort(taskCmp);
+  list.innerHTML=entries.map(([k,t])=>taskCard(k,t)).join('');
+}
+function taskCard(id,t){
+  const st=t.status||'proposed';
+  const meta=[t.room?('방 '+esc(t.room)):'', t.guest?esc(t.guest):'', t.dueHint?esc(t.dueHint):''].filter(Boolean).join(' · ');
+  let badge='', actions='';
+  if(st==='proposed'){
+    badge='<span class="tk-badge tk-prop">후보</span>';
+    actions='<div class="btns"><button class="b skip" onclick="rejectTask(\''+id+'\')">기각</button>'+
+      '<button class="b go" onclick="approveTask(\''+id+'\')">승인</button></div>';
+  } else if(st==='active'){
+    badge='<span class="tk-badge tk-act">진행</span>';
+    actions='<div class="btns"><button class="b go" onclick="toggleTaskDone(\''+id+'\')">완료 체크</button></div>';
+  } else { // done
+    badge='<span class="tk-badge tk-done">완료</span>';
+    actions='<div class="btns"><button class="b" onclick="toggleTaskDone(\''+id+'\')">되돌리기</button></div>';
+  }
+  return '<div class="card tk'+(st==='done'?' tk-is-done':'')+'">'+
+    '<div class="meta">'+badge+(meta?'<span class="tk-meta">'+meta+'</span>':'')+'</div>'+
+    '<div class="tk-text">'+esc(t.text||'—')+'</div>'+
+    actions+
+  '</div>';
+}
+function approveTask(id){ update(ref(db,'cs/tasks/'+id),{status:'active',activatedAt:new Date().toISOString()}).then(()=>toast('업무 승인')).catch(e=>toast('실패: 쓰기 권한')); }
+function rejectTask(id){ update(ref(db,'cs/tasks/'+id),{status:'rejected',rejectedAt:new Date().toISOString()}).then(()=>toast('업무 기각')).catch(e=>toast('실패: 쓰기 권한')); }
+function toggleTaskDone(id){ const cur=(tasks[id]||{}).status; const next=cur==='done'?'active':'done';
+  update(ref(db,'cs/tasks/'+id),{status:next,doneAt:next==='done'?new Date().toISOString():null}).then(()=>toast(next==='done'?'완료 처리':'진행으로 되돌림')).catch(e=>toast('실패: 쓰기 권한')); }
 
 // ── 승인/수정/발송 (쓰기 지점: cs/drafts/{id} 만) ──
 function approveDraft(id){
@@ -485,8 +569,8 @@ function approveDraft(id){
   const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
   update(ref(db,'cs/drafts/'+id),{status:'approved',finalReply:final,editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; delete selfScores[id];
-      if(learnMode) triggerImmediateSave(id); // 승인 즉시 GAS 저장 호출(5분 폴링 대기 없음). 결과는 Firebase로 반영.
-      toast(learnMode?(edited?'수정본 저장 중…(학습)':'저장 중…(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
+      if(learnMode){ optimisticSaved.add(id); triggerImmediateSave(id); renderWait(); renderSent(); } // (2) 즉시 '저장됨' 표시 + 백그라운드 저장
+      toast(learnMode?(edited?'수정본 저장됨(학습)':'저장됨(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
     .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
 }
 // 즉시저장 트리거 — GAS 웹앱에 fire-and-forget POST(no-cors). 성공/실패는 Firebase(status=saved/saveError)로 확인.
@@ -615,6 +699,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; window.showTab=showTab;
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.toggleEdit=toggleEdit; window.editInput=editInput;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
+window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone;
 </script>
 </body>
 </html>
