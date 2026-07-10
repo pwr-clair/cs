@@ -93,6 +93,7 @@ button{font-family:inherit;}
 .gen-btn{width:100%;padding:10px;border-radius:var(--rs);border:1px solid var(--night);background:var(--night);color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
 .gen-btn:active{transform:scale(.99);}
 .gen-btn:disabled{opacity:.5;cursor:not-allowed;}
+.card.gen-pending{border:1px dashed var(--night);background:var(--night-soft);padding:12px 13px;}
 
 .tabs{display:flex;gap:4px;margin-bottom:12px;}
 .tab{flex:1;text-align:center;padding:8px 0;border-radius:var(--rs);border:1px solid var(--line);background:var(--card);font-size:11.5px;font-weight:600;color:var(--ink2);cursor:pointer;}
@@ -380,7 +381,7 @@ function startListeners(){
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
   onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
-  onValue(ref(db,'cs/manualQueue'), snap=>{ manualQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderGenStatus(); }, permErr('cs/manualQueue'));
+  onValue(ref(db,'cs/manualQueue'), snap=>{ manualQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderGenStatus(); renderWait(); } }, permErr('cs/manualQueue'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
@@ -552,10 +553,11 @@ function renderWait(){
     : '';
   // 예약 단위 그룹핑 → 답할 초안이 하나라도 있는 그룹만 대기에 표시
   const groups=buildGroups(convo).filter(g=> g.items.some(([k,d])=>isActionable_(k,d)));
-  if(!groups.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  const genCards=manualPendingCards(); // 즉석 생성 낙관적 '생성 중' 카드(요청 즉시 자리 확보)
+  if(!groups.length && !genCards){ list.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
   groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1])); // 최근 대화 위로
-  list.innerHTML=groups.map(g=>{
+  const groupsHtml=groups.map(g=>{
     // 답변 대상 = 그룹 내 최신 actionable 초안
     const acts=g.items.filter(([k,d])=>isActionable_(k,d));
     const target=acts[acts.length-1]||g.latest;
@@ -564,6 +566,25 @@ function renderWait(){
     const prior=g.items.filter(([k,d])=>k!==target[0]); // 대상 제외한 이전 대화
     const timeline=(expanded && prior.length)?bubbleTimeline(prior):'';
     return '<div class="card grp">'+groupHeader(g,head)+timeline+answerBody(target[0],target[1])+'</div>';
+  }).join('');
+  list.innerHTML=genCards+groupsHtml; // 생성 중 카드 먼저(맨 위)
+}
+// 즉석 생성 요청(cs/manualQueue pending)을 대기 상단에 '생성 중' 낙관적 카드로. 30초+ 지속 시 지연 경고(=즉시경로 미작동 신호).
+function manualPendingCards(){
+  const now=Date.now();
+  const pend=Object.keys(manualQueue||{}).map(k=>[k,manualQueue[k]])
+    .filter(([k,v])=>v && v.status==='pending')
+    .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
+  if(!pend.length) return '';
+  return pend.map(([k,v])=>{
+    const age=v.createdAt?Math.max(0,Math.round((now-Date.parse(v.createdAt))/1000)):0;
+    const stale=age>=30;
+    const prev=String(v.text||'').replace(/\s+/g,' ');
+    return '<div class="card gen-pending"><div class="ans-top"><span class="chan">즉석</span>'+
+      '<span class="status approved"><span class="spinner"></span>생성 중…'+(stale?' ('+age+'s · 지연)':'')+'</span></div>'+
+      '<div class="msg"><div class="who">붙여넣은 메시지</div><div class="body">'+esc(prev.slice(0,90)+(prev.length>90?'…':''))+'</div></div>'+
+      (stale?'<div class="edit-hint">⚠ 즉시경로 미작동 추정 — 웹앱 /exec URL·재배포 확인 후 GAS에서 <b>publishSaveHookUrl</b> 재실행. 최대 5분 내 폴링으로는 처리됩니다.</div>':'')+
+    '</div>';
   }).join('');
 }
 
@@ -697,12 +718,18 @@ function generateInstant(){
 }
 function renderGenStatus(){
   const el=document.getElementById('genStatus'); if(!el) return;
+  const now=Date.now();
   const vals=Object.keys(manualQueue||{}).map(k=>manualQueue[k]).filter(Boolean);
-  const pending=vals.filter(v=>v.status==='pending').length;
+  const pend=vals.filter(v=>v.status==='pending');
   const errs=vals.filter(v=>v.status==='error');
-  if(pending) el.textContent='생성 중 '+pending+'건… 대기 탭에 곧 표시';
-  else if(errs.length) el.textContent='⚠ 최근 생성 실패: '+(errs[errs.length-1].error||'오류');
-  else el.textContent='게스트 메시지를 붙여넣으면 바로 초안이 대기에 올라옵니다';
+  const stalePend=pend.some(v=>v.createdAt && (now-Date.parse(v.createdAt))>=30000);
+  if(!saveHookUrl){ // 즉시경로 URL 미등록 → 5분 폴링만
+    el.textContent='⚠ 웹앱 URL 미등록 — GAS에서 publishSaveHookUrl 실행 필요(지금은 최대 5분 지연)';
+  } else if(stalePend){ // URL 있는데도 30s+ 지연 → 즉시경로 미작동(옛 URL/재배포 문제)
+    el.textContent='⚠ 즉시경로 지연 — 웹앱 /exec URL 불일치 의심. 재배포 후 publishSaveHookUrl 재실행 권장';
+  } else if(pend.length){ el.textContent='생성 중 '+pend.length+'건… 대기 탭에 곧 표시';
+  } else if(errs.length){ el.textContent='⚠ 최근 생성 실패: '+(errs[errs.length-1].error||'오류');
+  } else el.textContent='게스트 메시지를 붙여넣으면 바로 초안이 대기에 올라옵니다';
 }
 
 // ── 승인/수정/발송 (쓰기 지점: cs/drafts/{id} 만) ──
@@ -860,7 +887,9 @@ function renderBudget(){
 }
 
 // ── 시계 · 토스트 · 탭 ──
-function tick(){ const d=new Date(); const el=document.getElementById('clk'); if(el) el.textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function tick(){ const d=new Date(); const el=document.getElementById('clk'); if(el) el.textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  // 즉석 생성 pending이 있으면 15초마다 재렌더 → 경과초·지연경고가 Firebase 이벤트 없이도 갱신
+  if(isLoggedIn && Object.keys(manualQueue||{}).some(k=>manualQueue[k]&&manualQueue[k].status==='pending')){ renderGenStatus(); renderWait(); } }
 tick(); setInterval(tick,15000);
 function showTab(i,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
