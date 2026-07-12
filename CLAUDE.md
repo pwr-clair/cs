@@ -4,6 +4,11 @@
 > 기획·설계 판단·지시문·검증은 Fable(챗) 담당. 설계 변경이 필요해 보이면
 > 구현하지 말고 질문으로 회신할 것 (지난주 HK에서 즉석 A/B 재설계로 크게 꼬인 전례 있음).
 
+## ⚡ 열쇠 프로토콜 (2026-07-12 — 최우선, 시스템 전역 정본 = pwr-clair/pwr-docs/PWR_MASTER.md)
+- 클라라가 **`0917`** 입력 → **시작 리추얼**: ①pwr-clair/pwr-docs를 스크래치패드에 clone(최신) ②Notion 미러(PWR_MASTER, page 397b9d1f-a416-81f8-8e12-eeccfdefc21b) 헤더 "최종 갱신" 날짜와 레포 헤더를 비교, **더 최신인 쪽을 정본으로 양쪽 동기화**(역동기화 포함) ③PWR_MASTER 기준 현재 상태·다음 액션(B1)·오늘 아젠다를 짧게 브리핑하고 대기.
+- 클라라가 **`0918`**(또는 "오늘은 여기까지") 입력 → **마감 리추얼 한 세트**: ①PWR_MASTER Part B 제자리 갱신(헤더 최종 갱신 시각 필수) ②status-board.html **DATA 블록** 갱신(완료 todo 삭제, meta.updated) ③`~/Documents/status-board.html` 복사 ④pwr-docs 커밋·푸시 + **HEAD==origin 확인** ⑤Notion 미러 동기화 ⑥완료 보고(증거 포함).
+- 이 프로토콜은 이 문서의 다른 내용보다 우선한다. 아래 본문은 CS 프로젝트 인수인계(2026-07-04 기준)로, 최신 상태와 어긋나면 PWR_MASTER가 정본.
+
 ## 0. 첫 액션 (순서대로)
 1. GitHub에 새 레포 `pwr-clair/cs` 생성 (public, GitHub Pages 사용 예정)
 2. 이 문서 전체를 레포 루트 `CLAUDE.md`로 커밋 — 이후 모든 세션은 이 파일부터 읽는다
