@@ -723,6 +723,9 @@ function toggleTaskDone(id){ const cur=(tasks[id]||{}).status; const next=cur===
   update(ref(db,'cs/tasks/'+id),{status:next,doneAt:next==='done'?new Date().toISOString():null}).then(()=>toast(next==='done'?'완료 처리':'진행으로 되돌림')).catch(e=>toast('실패: 쓰기 권한')); }
 
 // ── 제안 탭 (2026-07-14): cs/suggestions — ETA 감지 → 승인 시 GAS 워커가 HK 반영(최대 5분) ──
+// ETA 표시: 앞시간만 am/pm 축약 (19:00-20:00 → 7pm). 전체 범위는 근거 인용에 보존.
+function fmtEtaShort(eta){ const m=String(eta||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return eta||'—';
+  const h24=+m[1], mm=+m[2], ap=h24<12?'am':'pm', h=(h24%12)||12; return h+(mm?':'+String(mm).padStart(2,'0'):'')+ap; }
 function renderSugg(){
   const listEl=document.getElementById('suggList'); if(!listEl) return;
   const entries=Object.keys(suggestions||{}).map(k=>[k,suggestions[k]]).filter(([k,s])=>!!s)
@@ -739,7 +742,7 @@ function renderSugg(){
     noti.innerHTML=pend.map(([k,s])=>
       '<div onclick="gotoSuggTab()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:6px;'+
       'border:0.5px solid rgba(156,36,72,.35);border-radius:9px;background:rgba(253,238,243,.6);cursor:pointer;">'+
-      '<span style="font-size:12px;font-weight:700;flex-shrink:0;">🕐 도착예정 '+esc(s.eta||'—')+'</span>'+
+      '<span style="font-size:12px;font-weight:700;flex-shrink:0;">🕐 ETA '+esc(fmtEtaShort(s.eta))+'</span>'+
       '<span style="font-size:11px;opacity:.7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0;flex:1;">'+
         esc([(s.guest||'게스트'),(s.room?s.room+'호':null),(s.checkinDate?'체크인 '+s.checkinDate:null)].filter(Boolean).join(' · '))+'</span>'+
       '<span style="font-size:11px;font-weight:600;flex-shrink:0;">승인하기 →</span></div>'
@@ -758,7 +761,7 @@ function renderSugg(){
         '<button class="b go" onclick="approveSugg(\''+id+'\')">승인 → HK 반영</button></div>' : '';
     return '<div class="card">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px;">'+
-        '<b style="font-size:13px;">🕐 도착예정 '+esc(s.eta||'—')+'</b>'+state+'</div>'+
+        '<b style="font-size:13px;">🕐 ETA '+esc(fmtEtaShort(s.eta))+'</b>'+state+'</div>'+
       '<div style="font-size:11px;opacity:.65;margin-bottom:6px;">'+esc(meta||'예약 매핑 정보 없음 — 반영 시 자동 재매칭')+'</div>'+
       (s.evidence?'<div style="font-size:12px;border-left:2px solid rgba(127,127,127,.4);padding-left:8px;opacity:.8;margin-bottom:8px;">“'+esc(s.evidence)+'”</div>':'')+
       btns+'</div>';
