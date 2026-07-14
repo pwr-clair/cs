@@ -1269,6 +1269,46 @@ function diagPeekTasks(msgId) {
   finally { _diagRaw = false; }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// (진단) 수신 누락 전수조사 — diagMissedInbox()  [2026-07-14, B1-1]
+//   최근 N일(기본 3일) OTA 발신 도메인 메일을 라벨 무관 전수 검색 →
+//   각 메일이 ①라벨(cs/booking·CS/적재됨) 붙었는지 ②cs/inbox 적재됐는지 대조해 로그로 출력.
+//   실행: GAS 에디터에서 함수 diagMissedInbox 선택 → 실행 → 실행 로그 복사. 배포 불필요.
+//   비용: Gmail 읽기 소량 + urlfetch 1회(shallow 키 목록만). 발송·초안 생성 없음.
+// ══════════════════════════════════════════════════════════════════
+function diagMissedInbox(days) {
+  days = days || 3;
+  // 3사 발신 도메인을 넓게 검색(변형 발신자 탐지 목적 — 마케팅 메일도 걸리니 제목 보고 판별)
+  var q = 'newer_than:' + days + 'd from:(guest.booking.com OR booking.com OR agoda-messaging.com OR agoda.com OR expediapartnercentral.com OR expedia.com)';
+  var threads = GmailApp.search(q, 0, 100);
+  var res = UrlFetchApp.fetch(FB_BASE + '/cs/inbox.json?shallow=true&auth=' + fbAuth_(), { muteHttpExceptions: true });
+  var inboxKeys = (res.getResponseCode() < 300 && JSON.parse(res.getContentText())) || {};
+  var rows = [], nOk = 0, nNoLabel = 0, nSkipped = 0, nWait = 0;
+  for (var t = 0; t < threads.length; t++) {
+    var labels = threads[t].getLabels().map(function (L) { return L.getName(); });
+    var hasCs = labels.indexOf(CS_LABEL) >= 0, hasDone = labels.indexOf(CS_DONE_LABEL) >= 0;
+    var msgs = threads[t].getMessages();
+    for (var m = 0; m < msgs.length; m++) {
+      var msg = msgs[m];
+      if ((Date.now() - msg.getDate().getTime()) > days * 864e5) continue; // 스레드 내 옛 메시지 제외
+      var id = msg.getId();
+      var ch = detectChannel_(msg.getFrom());
+      var state;
+      if (inboxKeys[id]) { state = 'OK 적재됨'; nOk++; }
+      else if (!hasCs && !hasDone) { state = '[R]라벨없음 — Gmail 필터가 이 발신자를 안 잡음'; nNoLabel++; }
+      else if (!ch) { state = '[Y]라벨O·비대상발신자 — 파서가 모르는 From(스킵된 채 완료처리)'; nSkipped++; }
+      else if (hasDone && !hasCs) { state = '[O]완료라벨인데 inbox 없음 — 스킵/유실 의심'; nSkipped++; }
+      else { state = '대기중(다음 폴링에 처리 예정)'; nWait++; }
+      rows.push([Utilities.formatDate(msg.getDate(), 'Asia/Seoul', 'MM-dd HH:mm'), (ch || '?'), state, msg.getFrom(), String(msg.getSubject() || '').slice(0, 60), id].join(' | '));
+    }
+  }
+  rows.sort(); rows.reverse();
+  Logger.log('===== 수신 누락 전수조사: 최근 ' + days + '일, 스레드 ' + threads.length + '개 =====');
+  for (var i = 0; i < rows.length; i++) Logger.log(rows[i]);
+  Logger.log('===== 요약: 적재 ' + nOk + ' / [R]라벨없음 ' + nNoLabel + ' / [Y·O]라벨O·미적재 ' + nSkipped + ' / 대기 ' + nWait + ' =====');
+  Logger.log('[R]이 게스트 메시지면 → Gmail 필터 조건에 그 발신자 추가 필요. [Y·O]가 있으면 → 그 줄 전체를 클코에 전달(파서 확장).');
+}
+
 // ---- 매핑: cs/inbox.bookingId(원번호) ↔ pendingBookings.channelBookingId ----
 var _pendingCache = null;
 function loadPending_() {
