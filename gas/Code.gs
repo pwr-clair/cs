@@ -465,11 +465,28 @@ function doGet(e) { // 브라우저 수동 점검용(같은 동작)
   catch (err) { return ContentService.createTextOutput('err:' + err); }
 }
 // 배포 후 1회 실행: 현재 웹앱 배포 URL을 cs/config/saveHookUrl 에 등록 → DESK가 자동으로 읽어 즉시저장 호출.
+// (가드 2026-07-14) /dev(테스트 배포) URL은 익명 호출이 거부돼 즉시경로가 죽으므로 등록을 거부한다 — 07-13 사고 재발 방지.
 function publishSaveHookUrl() {
   var url = ScriptApp.getService().getUrl();
   if (!url) { Logger.log('웹앱 미배포 — 먼저 [배포]로 웹앱 배포 후 실행'); return; }
+  if (url.indexOf('/dev') >= 0 || url.indexOf('/exec') < 0) {
+    Logger.log('⚠ 현재 URL이 /dev(테스트 배포) — 등록 중단(등록해도 즉시경로 안 삶).');
+    Logger.log('해결: [배포]→[새 배포]→유형 웹 앱(실행=나, 액세스=모든 사용자)→배포 → 이 함수 재실행.');
+    Logger.log('그래도 /dev면: [배포]→[배포 관리]에서 웹 앱 /exec URL 복사 → 스크립트 속성 SAVE_HOOK_URL에 저장 → publishSaveHookUrlFromProp 실행.');
+    return;
+  }
   fbSet('cs/config/saveHookUrl', url);
   Logger.log('saveHookUrl 등록 완료: ' + url);
+}
+// (수동 폴백) getUrl()이 /dev만 돌려주는 환경용: 스크립트 속성 SAVE_HOOK_URL에 /exec URL을 넣고 이 함수 실행.
+function publishSaveHookUrlFromProp() {
+  var url = String(PropertiesService.getScriptProperties().getProperty('SAVE_HOOK_URL') || '').trim();
+  if (url.indexOf('https://') !== 0 || url.indexOf('/exec') < 0) {
+    Logger.log('스크립트 속성 SAVE_HOOK_URL에 /exec로 끝나는 웹앱 URL을 먼저 저장하세요. 현재값: ' + (url || '(없음)'));
+    return;
+  }
+  fbSet('cs/config/saveHookUrl', url);
+  Logger.log('saveHookUrl 수동 등록 완료: ' + url);
 }
 
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
