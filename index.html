@@ -721,16 +721,22 @@ function renderGenStatus(){
   const now=Date.now();
   const vals=Object.keys(manualQueue||{}).map(k=>manualQueue[k]).filter(Boolean);
   const pend=vals.filter(v=>v.status==='pending');
-  const errs=vals.filter(v=>v.status==='error');
+  // 에러 배너: 24h 자동만료 + ✕ 닫기(닫은 시각 이전 에러는 재표시 안 함) — 3일 고정 배너의 고장 착시 방지
+  const errDismissedAt=Number(localStorage.getItem('csGenErrDismiss')||0);
+  const errs=vals.filter(v=>v.status==='error')
+    .filter(v=>{ const t=v.createdAt?Date.parse(v.createdAt):0; return t>errDismissedAt && (now-t)<86400000; });
   const stalePend=pend.some(v=>v.createdAt && (now-Date.parse(v.createdAt))>=30000);
   if(!saveHookUrl){ // 즉시경로 URL 미등록 → 5분 폴링만
     el.textContent='⚠ 웹앱 URL 미등록 — GAS에서 publishSaveHookUrl 실행 필요(지금은 최대 5분 지연)';
   } else if(stalePend){ // URL 있는데도 30s+ 지연 → 즉시경로 미작동(옛 URL/재배포 문제)
     el.textContent='⚠ 즉시경로 지연 — 웹앱 /exec URL 불일치 의심. 재배포 후 publishSaveHookUrl 재실행 권장';
   } else if(pend.length){ el.textContent='생성 중 '+pend.length+'건… 대기 탭에 곧 표시';
-  } else if(errs.length){ el.textContent='⚠ 최근 생성 실패: '+(errs[errs.length-1].error||'오류');
+  } else if(errs.length){
+    el.innerHTML='⚠ 최근 생성 실패: '+esc(errs[errs.length-1].error||'오류')+
+      ' <button onclick="dismissGenErr()" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;padding:0 2px" title="닫기">✕</button>';
   } else el.textContent='게스트 메시지를 붙여넣으면 바로 초안이 대기에 올라옵니다';
 }
+function dismissGenErr(){ localStorage.setItem('csGenErrDismiss',String(Date.now())); renderGenStatus(); }
 
 // ── 승인/수정/발송 (쓰기 지점: cs/drafts/{id} 만) ──
 function approveDraft(id){
@@ -904,7 +910,7 @@ window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; wind
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.editInput=editInput;
 window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
-window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant;
+window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant; window.dismissGenErr=dismissGenErr;
 </script>
 </body>
 </html>

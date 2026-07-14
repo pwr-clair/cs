@@ -862,7 +862,7 @@ function debugPeekLatest() {
 // ══════════════════════════════════════════════════════════════════
 
 var CLAUDE_MODEL   = 'claude-haiku-4-5-20251001'; // 저비용 라인 (haiku급)
-var CLAUDE_MAXTOK  = 1024;                         // 보수적
+var CLAUDE_MAXTOK  = 2048;                         // 1024 잘림→JSON 파싱 실패(07-10 Renuka 유실) 재발 방지
 var CS_DB_SHEET_ID = '1JHbIEJ9XX1Pxp0JPPgQmJ-1xWI7e5fKtrws4x-iCcJg'; // CLAUDE.md §7
 var PENDING_PATH   = 'app/pendingBookings';                          // Firebase 실측 확정 경로 (Fable)
 var DRAFT_BATCH    = 5;  // 폴링 1회당 최대 초안 생성 수 (실행시간·비용 캡)
@@ -1212,17 +1212,21 @@ function claudeDraft_(inbox, examples, history) {
 
   var payload = { model: CLAUDE_MODEL, max_tokens: CLAUDE_MAXTOK, system: CLARA_SYSTEM,
                   messages: [{ role: 'user', content: user }] };
-  var res = csFetch_('https://api.anthropic.com/v1/messages', {
-    method: 'post', contentType: 'application/json',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    payload: JSON.stringify(payload), muteHttpExceptions: true
-  });
-  if (res.getResponseCode() >= 300) throw new Error('Claude API ' + res.getResponseCode() + ': ' + res.getContentText());
-  var body = JSON.parse(res.getContentText());
-  var text = (body.content && body.content[0] && body.content[0].text) || '';
-  if (_diagRaw) Logger.log('RAW Claude 응답:\n' + text); // 진단(diagPeekTasks)에서만 켜짐
-  var obj = extractJson_(text);
-  if (!obj) throw new Error('Claude 응답 JSON 파싱 실패: ' + text.slice(0, 200));
+  // 파싱 실패만 1회 재시도(호출 최대 2회). API 에러(>=300)는 재시도 없이 즉시 throw.
+  var text = '', obj = null;
+  for (var attempt = 0; attempt < 2 && !obj; attempt++) {
+    var res = csFetch_('https://api.anthropic.com/v1/messages', {
+      method: 'post', contentType: 'application/json',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      payload: JSON.stringify(payload), muteHttpExceptions: true
+    });
+    if (res.getResponseCode() >= 300) throw new Error('Claude API ' + res.getResponseCode() + ': ' + res.getContentText());
+    var body = JSON.parse(res.getContentText());
+    text = (body.content && body.content[0] && body.content[0].text) || '';
+    if (_diagRaw) Logger.log('RAW Claude 응답:\n' + text); // 진단(diagPeekTasks)에서만 켜짐
+    obj = extractJson_(text);
+  }
+  if (!obj) throw new Error('Claude 응답 JSON 파싱 실패(재시도 포함 2회): ' + text.slice(0, 200));
   return {
     reply: obj.reply || '', replyKo: obj.replyKo || '',
     category: obj.category || '기타',
