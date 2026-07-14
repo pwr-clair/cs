@@ -579,6 +579,9 @@ function pollCsInbox() {
     try { processManualQueue_(); } catch (e) { Logger.log('즉석 생성 큐 실패: ' + e); }
     // 제안 반영 워커: 승인된 제안(eta 등)을 HK에 반영 (§3 예외 경로, urlfetch 소량)
     try { applySuggestions_(); } catch (e) { Logger.log('제안 반영 워커 실패: ' + e); }
+    // 후기 탭 워커: ①체크아웃 익일 후보 선별(하루 1회) ②승인분 후기 요청 초안 생성(Claude 1회/건)
+    try { reviewQueueWorker_(); } catch (e) { Logger.log('후기 선별 워커 실패: ' + e); }
+    try { reviewDraftWorker_(); } catch (e) { Logger.log('후기 초안 워커 실패: ' + e); }
   }
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   //   1분 run이라도 새 메일을 적재한 경우 여기 도달 → 바로 초안 생성(A안의 핵심: 1분 내 데스크 표시)
@@ -991,8 +994,10 @@ var CLARA_SYSTEM =
   '[이전 대화 맥락] 사용자 메시지에 [이 예약의 이전 대화]가 함께 오면 반드시 그 흐름을 이어서 답하세요. ' +
   '이미 안내한 내용(도착/셔틀/체크인 등)을 반복하지 말고, 게스트가 짧은 감사·확인("thanks","ok","감사합니다")만 보냈으면 도착 안내 풀세트를 다시 붙이지 말고 짧고 따뜻하게 화답하세요. 새 질문에만 새 정보로 답합니다.\n' +
   '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
+  '[답변 필요도] replyNeeded: 이 메시지에 답장이 필요한지 판단하세요. 반드시 이전 대화 맥락을 함께 고려합니다 — 우리가 이미 답한 내용에 대한 단순 감사·확인·수신 알림("thanks","ok","알겠습니다", 자동 통지성 정보 등)이라 답을 안 보내도 자연스러우면 false, 질문·요청이 있거나 첫 인사라 답이 예의상 필요하면 true. false일 때 replyNote에 이유를 한국어 한 줄로(예: "안내 확인 감사 인사 — 답 없어도 자연스러움").\n' +
+  '[게스트 감정] sentiment: 이 게스트의 현재 감정·태도를 "positive"(만족·호의적), "neutral", "negative"(불만·불편) 중 하나로.\n' +
   '응답은 반드시 JSON 하나로만 출력: ' +
-  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자, "tasks": [{"text": 한국어 할 일, "dueHint": 시점힌트}]}. ' +
+  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자, "tasks": [{"text": 한국어 할 일, "dueHint": 시점힌트}], "replyNeeded": true/false, "replyNote": 한국어 한 줄(replyNeeded가 false일 때만), "sentiment": "positive"/"neutral"/"negative"}. ' +
   'JSON 외 다른 텍스트를 출력하지 마세요.';
 
 // ---- (2) 초안 생성 파이프라인: 신규 inbox → cs/drafts ----
@@ -1112,6 +1117,88 @@ function makeManualDraft_(rid, text) {
   if (norm) fbSet('cs/handledManual/' + manualId, { norm: norm, ts: new Date().toISOString(), src: 'manual' });
 }
 
+// ── 후기 선별 지표: cs/guestScore/{bookingId} — 감정·메시지 수·최근성 누적(초안 생성 시마다, 추가 Claude 호출 없음) ──
+function updateGuestScore_(inbox, sentiment, sirvoy) {
+  var bid = inbox.bookingId; if (!bid) return; // 예약 미상(즉석 생성 등)은 집계 불가
+  var key = String(bid).replace(/[.#$\[\]\/]/g, '_');
+  var cur = fbGet('cs/guestScore/' + key) || {};
+  fbSet('cs/guestScore/' + key, {
+    guest: inbox.guest || cur.guest || null,
+    lang: inbox.lang || cur.lang || 'en',
+    channel: inbox.source || cur.channel || null,
+    threadId: inbox.threadId || cur.threadId || null, // 후기 요청 발송 시 회신할 최근 스레드
+    msgCount: (cur.msgCount || 0) + 1,
+    lastSentiment: sentiment || 'neutral',
+    posCount: (cur.posCount || 0) + (sentiment === 'positive' ? 1 : 0),
+    negCount: (cur.negCount || 0) + (sentiment === 'negative' ? 1 : 0),
+    checkoutDate: (sirvoy && sirvoy.checkoutDate) || cur.checkoutDate || null,
+    sirvoyId: (sirvoy && sirvoy.sirvoyId) || cur.sirvoyId || null,
+    room: (sirvoy && sirvoy.room) || cur.room || null,
+    lastAt: new Date().toISOString()
+  });
+}
+
+// ── 후기 탭 (2026-07-14 B1-6, §3: 감성 긍정+소통 원활 게스트만·체크아웃 익일) ──────────
+// ①선별(하루 1회): 어제 체크아웃 + 긍정(negCount 0·posCount≥1) + 대화 있음 → cs/reviewQueue proposed
+// ②초안(5분 슬롯): 후기 탭에서 승인된 건 → Claude 1회로 후기 요청 초안 → cs/drafts(대기 탭에서 최종 승인)
+//   7월 학습모드에선 발송 없음(저장만) — 실전 발송은 8월 전환 후. 발송 경로는 기존 워커 재사용.
+function reviewQueueWorker_() {
+  var p = PropertiesService.getScriptProperties();
+  var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  if (p.getProperty('CS_REVIEW_DATE') === today) return; // 하루 1회(이후 run은 urlfetch 0회)
+  var yesterday = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+  var scores = fbGet('cs/guestScore') || {};
+  var queue = fbGet('cs/reviewQueue') || {};
+  var made = 0;
+  for (var key in scores) {
+    var s = scores[key]; if (!s) continue;
+    if (s.checkoutDate !== yesterday) continue;  // 체크아웃 익일 대상
+    if (queue[key]) continue;                    // 멱등
+    if ((s.negCount || 0) > 0) continue;         // 불만 이력 게스트 제외
+    if ((s.posCount || 0) < 1) continue;         // 긍정 신호 필요
+    fbSet('cs/reviewQueue/' + key, {
+      status: 'proposed', guest: s.guest || null, bookingId: key, lang: s.lang || 'en',
+      channel: s.channel || null, room: s.room || null, threadId: s.threadId || null,
+      checkoutDate: s.checkoutDate, msgCount: s.msgCount || 0, posCount: s.posCount || 0,
+      createdAt: new Date().toISOString()
+    });
+    made++;
+  }
+  p.setProperty('CS_REVIEW_DATE', today);
+  if (made) Logger.log('후기 후보 선별: ' + made + '건 (체크아웃 ' + yesterday + ')');
+}
+function reviewDraftWorker_() {
+  var queue = fbGet('cs/reviewQueue'); if (!queue) return;
+  for (var key in queue) {
+    var q = queue[key];
+    if (!q || q.status !== 'approved' || q.drafted) continue;
+    try {
+      var inboxLike = {
+        parsed: { message: '[시스템] 어제 체크아웃한 게스트에게 보낼 짧은 후기 요청 메시지를 작성하세요. 게스트 언어=' + (q.lang || 'en') + '. 숙박에 대한 감사 + 후기가 큰 힘이 된다는 부담 없는 두세 문장. 새 정보 안내·질문 금지.' },
+        lang: q.lang || 'en', bookingId: q.bookingId || null, guest: q.guest || null,
+        source: q.channel || 'booking', emailReply: true, receivedAt: new Date().toISOString(),
+        raw: { body: '' }, threadId: q.threadId || null, replyTo: null
+      };
+      var d = claudeDraft_(inboxLike, retrieveExamples_(inboxLike), '');
+      var draftId = 'review_' + key;
+      fbSet('cs/drafts/' + draftId, {
+        reply: d.reply, replyKo: d.replyKo, category: '후기요청', confidence: d.confidence,
+        status: 'pending', editedReply: null, lang: q.lang || 'en', guest: q.guest || null,
+        bookingId: q.bookingId || null, channel: q.channel || null, origin: 'review',
+        threadId: q.threadId || null, emailReply: !!q.threadId, room: q.room || null,
+        origMsg: '(후기 요청 — ' + (q.guest || '게스트') + ', ' + (q.checkoutDate || '') + ' 체크아웃)',
+        receivedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
+        model: CLAUDE_MODEL
+      });
+      fbUpdate('cs/reviewQueue/' + key, { drafted: true, draftId: draftId, draftedAt: new Date().toISOString() });
+      Logger.log('후기 요청 초안 생성: ' + key);
+    } catch (e) {
+      fbUpdate('cs/reviewQueue/' + key, { draftError: String(e).slice(0, 150), lastTriedAt: new Date().toISOString() });
+      Logger.log('후기 초안 실패 ' + key + ': ' + e);
+    }
+  }
+}
+
 // (1) 같은 예약의 이전 대화 이력 → 프롬프트용 트랜스크립트(추가 Claude 호출 없음).
 //   그룹핑: 같은 bookingId(있으면) 또는 같은 threadId. 현재 메시지보다 receivedAt 이른 것만, 시간순.
 //   게스트 메시지(inbox.parsed.message) + 우리 답(drafts.finalReply, saved/sent/approved) 짝을 순서대로.
@@ -1168,9 +1255,13 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
     checkinDate: (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null,
     checkoutDate: (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null,
     hasHistory: !!history,                       // 맥락 참조 여부(DESK 표시·디버그용)
+    noReplySuggested: d.replyNeeded === false,   // 답불요 추천(7월 표시만, 자동처리 없음 — 2026-07-14 B1-5)
+    noReplyNote: d.replyNeeded === false ? (d.replyNote || '') : null,
+    sentiment: d.sentiment || 'neutral',         // 게스트 감정(후기 대상 선별 연료)
     model: CLAUDE_MODEL, examplesUsed: examples.length, createdAt: new Date().toISOString()
   };
   fbSet('cs/drafts/' + msgId, rec);
+  updateGuestScore_(inbox, d.sentiment, sirvoy); // 후기 선별용 감정·소통 지표 누적(cs/guestScore)
 
   // (4) 업무 후보 저장 — 같은 초안 호출이 반환한 tasks[]를 cs/tasks 에 status='proposed'로 적재(추가 호출 없음).
   saveTaskCandidates_(msgId, d.tasks, rec);
@@ -1360,7 +1451,10 @@ function claudeDraft_(inbox, examples, history) {
     reply: obj.reply || '', replyKo: obj.replyKo || '',
     category: obj.category || '기타',
     confidence: (typeof obj.confidence === 'number' ? obj.confidence : null),
-    tasks: sanitizeTasks_(obj.tasks) // (4) 업무 후보 배열(없으면 [])
+    tasks: sanitizeTasks_(obj.tasks), // (4) 업무 후보 배열(없으면 [])
+    replyNeeded: (obj.replyNeeded === false ? false : true), // 답변 필요도(기본 true — 미출력 시 안전)
+    replyNote: String(obj.replyNote || '').slice(0, 120),    // 답불요 사유(한국어 한 줄)
+    sentiment: (['positive','neutral','negative'].indexOf(obj.sentiment) >= 0 ? obj.sentiment : 'neutral') // 후기 대상 선별용
   };
 }
 // 모델이 준 tasks[] 정제: 배열·객체·text 유효한 것만, 최대 5개.

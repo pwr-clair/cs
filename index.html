@@ -277,7 +277,7 @@ button{font-family:inherit;}
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
     <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">—</span></button>
     <button class="tab" onclick="showTab(2,this)">제안<span class="n" id="tSugg">—</span></button>
-    <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(3,this)">후기<span class="n" id="tReview">—</span></button>
     <button class="tab" onclick="showTab(4,this)"><span id="tSentLbl">보냄</span><span class="n" id="tSent">—</span></button>
   </div>
 
@@ -298,7 +298,10 @@ button{font-family:inherit;}
     <div id="suggList"></div>
     <div class="empty" id="emptySugg" style="display:none;"><div class="big">제안 없음</div>게스트의 도착예정(ETA) 요청이 감지되면 여기에 올라옵니다. 승인하면 HK 대시보드에 자동 반영돼요(최대 5분).</div>
   </div>
-  <div class="pane" id="p3"><div class="empty"><div class="big">M2b-2 / M3</div>후기 탭은 이후 단계에서 연동됩니다.</div></div>
+  <div class="pane" id="p3">
+    <div id="reviewList"></div>
+    <div class="empty" id="emptyReview" style="display:none;"><div class="big">후기 후보 없음</div>어제 체크아웃한 게스트 중 감정 긍정+소통 원활한 분이 매일 아침 자동 선별돼 올라옵니다. 승인하면 후기 요청 초안이 대기 탭에 생성돼요.</div>
+  </div>
   <div class="pane" id="p4"><div id="sentList"></div></div>
 
   <div class="footnote">
@@ -339,6 +342,7 @@ let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHoo
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let manualQueue={}; // cs/manualQueue (즉석 생성 요청 상태)
 let suggestions={}; // cs/suggestions (ETA 등 HK 반영 제안 — 승인 시 GAS 워커가 5분 내 반영)
+let reviewQueue={}; // cs/reviewQueue (후기 요청 후보 — 승인 시 GAS가 요청 초안 생성→대기 탭)
 let edits={}, editingIds=new Set(); // 인라인 수정 버퍼(편집창 열림 동안)
 let committedEdit={}; // [저장]으로 확정한 편집본(승인이 이 값만 사용 → AI 초안 덮임 원천 차단)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
@@ -386,13 +390,14 @@ function startListeners(){
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
   onValue(ref(db,'cs/suggestions'), snap=>{ suggestions = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderSugg(); }, permErr('cs/suggestions'));
+  onValue(ref(db,'cs/reviewQueue'), snap=>{ reviewQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderReview(); }, permErr('cs/reviewQueue'));
   onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
   onValue(ref(db,'cs/manualQueue'), snap=>{ manualQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderGenStatus(); renderWait(); } }, permErr('cs/manualQueue'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); renderAuto(); renderBudget(); renderGenStatus(); }
+function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); renderReview(); renderAuto(); renderBudget(); renderGenStatus(); }
 // (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
 function reconcileOptimistic(){
   optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
@@ -474,6 +479,10 @@ function answerBody(id,d){
   const imgs=extractImgs(d.reply);
   const replyShown=imgs.length?stripImgs(d.reply):String(d.reply||'');
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
+  // 답불요 추천 배지 (7월: 표시만, 자동처리 없음 — 판단은 클라라. 초안 호출이 대화 맥락 보고 산출)
+  const noReplyBadge=(d.noReplySuggested)?'<span class="cat" style="background:#FAEEDA;color:#854F0B;">💤 답불요 추천</span>':'';
+  const noReplyNote=(st==='pending'&&d.noReplySuggested&&d.noReplyNote)
+    ?'<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:6px;padding:5px 8px;margin-top:6px;">💤 답불요 추천 — '+esc(d.noReplyNote)+' (표시만 — 보낼지는 클라라 판단)</div>':'';
   const editing=editingIds.has(id);
   const editVal=(edits[id]!=null)?edits[id]:editSourceText(d); // 편집창 = 한국어(비영어) / 영어(영어권)
   const saveFailed=(learnMode && st==='approved' && d.saveError);
@@ -516,8 +525,9 @@ function answerBody(id,d){
         (imgs.length?thumbsHtml(imgs):'')+'</div>';
 
   return '<div class="ans">'+
-    '<div class="ans-top"><div class="who">답할 문의</div>'+cat+right+'</div>'+
+    '<div class="ans-top"><div class="who">답할 문의</div>'+cat+noReplyBadge+right+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
+    noReplyNote+
     draftBlock+
     editArea+
     (st==='pending'?toneScoreRow(id):'')+
@@ -783,6 +793,46 @@ function rejectSugg(id){
     .then(()=>toast('제안 기각')).catch(e=>toast('실패: 쓰기 권한'));
 }
 
+// ── 후기 탭 (2026-07-14 B1-6): cs/reviewQueue — 체크아웃 익일 긍정 게스트 자동 선별 → 승인 시 초안 생성 ──
+function renderReview(){
+  const el=document.getElementById('reviewList'); if(!el)return;
+  const entries=Object.keys(reviewQueue||{}).map(k=>[k,reviewQueue[k]]).filter(([k,q])=>!!q)
+    .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
+  const prop=entries.filter(([k,q])=>q.status==='proposed');
+  const nEl=document.getElementById('tReview'); if(nEl)nEl.textContent=prop.length;
+  const emptyEl=document.getElementById('emptyReview');
+  if(emptyEl)emptyEl.style.display=entries.length?'none':'block';
+  const card=([k,q])=>{
+    const meta=[(q.room?q.room+'호':null),(q.checkoutDate?('체크아웃 '+q.checkoutDate):null),
+      ('대화 '+(q.msgCount||0)+'건 · 긍정 '+(q.posCount||0))].filter(Boolean).join(' · ');
+    let state='';
+    if(q.draftError) state='<span class="status error">'+esc(q.draftError)+'</span>';
+    else if(q.status==='approved'&&!q.drafted) state='<span class="status approved"><span class="spinner"></span>초안 생성 대기(5분 내)</span>';
+    else if(q.drafted) state='<span class="status approved">초안 생성됨 → 대기 탭에서 검토</span>';
+    else if(q.status==='skipped') state='<span class="status">건너뜀</span>';
+    const btns=q.status==='proposed'
+      ?'<div class="btns"><button class="b skip" onclick="skipReview(\''+k+'\')">건너뜀</button>'+
+       '<button class="b go" onclick="approveReview(\''+k+'\')">후기 요청 초안 만들기</button></div>':'';
+    return '<div class="card">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px;">'+
+        '<b style="font-size:13px;">⭐ '+esc(q.guest||'게스트')+'</b>'+state+'</div>'+
+      '<div style="font-size:11px;opacity:.65;margin-bottom:8px;">'+esc(meta)+'</div>'+btns+'</div>';
+  };
+  el.innerHTML=entries.map(card).join('');
+}
+function approveReview(k){
+  const q=reviewQueue[k];
+  if(!q||q.status!=='proposed'){ toast('이미 처리된 후보입니다'); return; }
+  update(ref(db,'cs/reviewQueue/'+k),{status:'approved',approvedAt:new Date().toISOString()})
+    .then(()=>toast('승인 — 5분 내 후기 요청 초안이 대기 탭에 올라옵니다')).catch(e=>toast('실패: 쓰기 권한'));
+}
+function skipReview(k){
+  const q=reviewQueue[k];
+  if(!q||q.status!=='proposed'){ toast('이미 처리된 후보입니다'); return; }
+  update(ref(db,'cs/reviewQueue/'+k),{status:'skipped',skippedAt:new Date().toISOString()})
+    .then(()=>toast('건너뜀')).catch(e=>toast('실패: 쓰기 권한'));
+}
+
 // ── 즉석 답변 생성기 (cs/manualQueue → GAS Claude 1회 → cs/drafts 대기) ──
 function generateInstant(){
   const box=document.getElementById('genBox'); const text=(box&&box.value||'').trim();
@@ -989,6 +1039,7 @@ window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
 window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant; window.dismissGenErr=dismissGenErr;
 window.approveSugg=approveSugg; window.rejectSugg=rejectSugg; window.gotoSuggTab=gotoSuggTab;
+window.approveReview=approveReview; window.skipReview=skipReview;
 </script>
 </body>
 </html>
