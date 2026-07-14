@@ -566,6 +566,7 @@ function ingestMessage_(msg, threadId) {
     parsed: parsed.ok ? { message: parsed.message } : null,
     parseFailed: !parsed.ok, // §6c: 파싱실패 플래그
     extractFailed: parsed.extractFailed || false, // 아고다 "메시지:" 라벨 못 찾음(껍데기 미적재) — 초안 스킵
+    notice: parsed.notice || false,          // 부킹 알림류(요청/취소) — 초안 없이 데스크 알림 카드(2026-07-14)
     bookingIdMismatch: parsed.bookingIdMismatch || false, // From/본문 예약번호 불일치 감지
     rawTail: parsed.rawTail || false, // 종료마커 못 찾아 message 전체 유지됨 플래그
     checkinDate: parsed.checkinDate || null,   // 예약 상세: 체크인 (YYYY-MM-DD)
@@ -599,6 +600,9 @@ function detectChannel_(from) {
   if (f.indexOf('@guest.booking.com') >= 0) return 'booking';
   if (f.indexOf('agoda-messaging.com') >= 0) return 'agoda';
   if (f.indexOf('expediapartnercentral.com') >= 0) return 'expedia';
+  // 부킹 알림류(2026-07-14 B1-1 확정): 게스트 요청 확정/거절/대기(noreply@) + 취소요청(property.) —
+  //   대화는 아니지만 조치가 필요한 메일. no-reply@agoda.com(예약 이벤트)은 클라라 지시로 제외.
+  if (f.indexOf('noreply@booking.com') >= 0 || f.indexOf('@property.booking.com') >= 0) return 'booking_notice';
   return null;
 }
 function newParse_() {
@@ -612,12 +616,31 @@ function newParse_() {
 function parseBooking_(raw) {
   var channel = detectChannel_(raw.from);
   if (!channel) { var s = newParse_(); s.skip = true; return s; }
-  var out = channel === 'booking' ? parseBookingCh_(raw)
+  var out = channel === 'booking_notice' ? parseBookingNotice_(raw)
+          : channel === 'booking' ? parseBookingCh_(raw)
           : channel === 'agoda'   ? parseAgoda_(raw)
           :                         parseExpedia_(raw);
-  out.channel = channel; out.source = channel;
+  out.channel = channel; out.source = (channel === 'booking_notice') ? 'booking' : channel;
   // 공통 이력 오염 방지: 종료마커 실패(rawTail)면 message를 앞 1000자로 제한
   if (out.rawTail && out.message && out.message.length > 1000) out.message = out.message.slice(0, 1000);
+  return out;
+}
+
+// 1b) 부킹 알림류(요청 확정/거절/대기·취소요청) — 게스트 대화가 아닌 '조치 알림'.
+//   초안 생성 없음(notice=true → processInboxToDrafts에서 경량 카드만), 이메일 회신 불가(emailReply=false).
+//   조치는 익스트라넷에서. ETA 등 요청 내용이 실려 오는 통로라 데스크 가시화가 목적.
+function parseBookingNotice_(raw) {
+  var out = newParse_();
+  out.ok = true; out.notice = true; out.emailReply = false;
+  var subj = String(raw.subject || '').trim();
+  var m = subj.match(/^(.+?)[’']s\s+request/i);            // "JIE MA's request ..." → 게스트명
+  if (m) out.guest = m[1].trim();
+  var b = String(raw.body || '');
+  var bid = b.match(/\b(\d{10})\b/);                             // 부킹 원번호(10자리) 있으면 채집
+  if (bid) out.bookingId = bid[1];
+  out.lang = 'en';
+  var snippet = b.replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  out.message = '[부킹 알림] ' + subj + (snippet ? '\n' + snippet : '');
   return out;
 }
 
@@ -902,6 +925,15 @@ function processInboxToDrafts() {
     var id = ids[i], rec = inbox[id];
     if (!rec || rec.parseFailed) continue; // 파싱 실패건은 초안 생략(수동 처리)
     if (drafts[id]) continue;              // 이미 초안 있음(멱등)
+    if (rec.notice) {                      // 부킹 알림류: Claude 호출 없이 경량 알림 카드(확인만 하면 됨)
+      fbSet('cs/drafts/' + id, {
+        status: 'notice', origin: 'notice', category: '요청알림',
+        guest: rec.guest || null, bookingId: rec.bookingId || null, channel: rec.source || 'booking',
+        origMsg: (rec.parsed && rec.parsed.message) || (rec.raw && rec.raw.subject) || '',
+        lang: rec.lang || 'en', receivedAt: rec.receivedAt || null, createdAt: new Date().toISOString()
+      });
+      drafts[id] = true; continue;         // made 미집계(Claude 배치 한도와 무관한 저비용 건)
+    }
     var msgText = (rec.parsed && rec.parsed.message) || '';
     if (msgText && isDuplicateOfManual_(msgText, handled)) { // 즉석 처리한 것과 동일 → 대기에 안 띄움(Claude 호출 없음)
       fbSet('cs/drafts/' + id, {

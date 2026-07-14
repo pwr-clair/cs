@@ -455,6 +455,16 @@ function bubbleTimeline(items){
 // 답변 대상(최신 초안)의 답변 영역 — 원문+초안+번역+자기평가+액션 (게스트/숙박 메타는 그룹헤더가 담당).
 function answerBody(id,d){
   const st=d.status||'pending';
+  // 부킹 알림류(요청 확정/거절/대기·취소요청) — 답장 없음, 확인·조치용 카드 (2026-07-14)
+  if(st==='notice'){
+    return '<div class="ans">'+
+      '<div class="ans-top"><div class="who">조치 알림</div><span class="cat">'+esc(d.category||'요청알림')+'</span>'+
+        '<span class="time">'+esc(fmtKST(d.receivedAt||d.createdAt))+' 도착</span></div>'+
+      '<div class="msg"><div class="who">부킹 알림 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
+      '<div class="readonly-note">이메일 회신 경로 없음 — 필요한 조치는 부킹 익스트라넷에서 하고, 확인 후 치워주세요.</div>'+
+      '<div class="btns"><button class="b skip" onclick="dismissDraft(\''+id+'\')">확인함 · 치우기</button></div>'+
+    '</div>';
+  }
   const imgs=extractImgs(d.reply);
   const replyShown=imgs.length?stripImgs(d.reply):String(d.reply||'');
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
@@ -532,7 +542,7 @@ function fmtKST(iso){ if(!iso) return '—'; const t=Date.parse(iso); if(isNaN(t
   return (k.getUTCMonth()+1)+'/'+k.getUTCDate()+' '+String(k.getUTCHours()).padStart(2,'0')+':'+String(k.getUTCMinutes()).padStart(2,'0'); }
 
 // 답할 대상인가(대기 액션 필요): pending/error & 낙관 저장 아님
-function isActionable_(id,d){ const s=d.status||'pending'; return (s==='pending'||s==='error') && !isSavedView(id,d); }
+function isActionable_(id,d){ const s=d.status||'pending'; return (s==='pending'||s==='error'||s==='notice') && !isSavedView(id,d); }
 function renderWait(){
   const list=document.getElementById('waitList');
   const empty=document.getElementById('emptyWait');
@@ -779,7 +789,7 @@ function retryDraft(id){
 // 지난 문의 치우기(원탭) — status:dismissed. 삭제 아님(데이터 보존). 발송 워커·학습 루프는 status!=='approved'/'sent'이라 자연 제외.
 function dismissDraft(id){
   const d=drafts[id];
-  if(!d || (d.status||'pending')!=='pending'){ toast('대기 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호
+  if(!d || ((d.status||'pending')!=='pending' && d.status!=='notice')){ toast('대기 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림 카드는 치우기 허용)
   update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; toast('지난 문의로 치움'); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
