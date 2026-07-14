@@ -733,17 +733,18 @@ function renderSugg(){
   const tEl=document.getElementById('tSugg'); if(tEl) tEl.textContent=pend.length;
   const emptyEl=document.getElementById('emptySugg');
   if(emptyEl) emptyEl.style.display=(pend.length||done.length)?'none':'block';
-  // 메인(대기) 화면 상단 한 줄 노티스 — 제안이 대기 중이면 알림, 탭하면 제안 탭으로 (2026-07-14 클라라 지시)
+  // 메인(대기) 화면 상단 노티스 — 제안 1건당 한 줄씩(묶음 금지, 2026-07-14 클라라 지시). 탭하면 제안 탭으로.
   const noti=document.getElementById('suggNotice');
   if(noti){
-    noti.innerHTML=pend.length
-      ? '<div onclick="gotoSuggTab()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:10px;'+
-        'border:0.5px solid rgba(156,36,72,.35);border-radius:9px;background:rgba(253,238,243,.6);cursor:pointer;">'+
-        '<span style="font-size:12px;font-weight:700;">🕐 제안 '+pend.length+'건 대기</span>'+
-        '<span style="font-size:11px;opacity:.7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0;flex:1;">'+
-          esc(pend.slice(0,2).map(([k,s])=>(s.guest||'게스트')+' '+(s.eta||'')).join(' · ')+(pend.length>2?' 외':''))+'</span>'+
-        '<span style="font-size:11px;font-weight:600;flex-shrink:0;">승인하기 →</span></div>'
-      : '';
+    noti.innerHTML=pend.map(([k,s])=>
+      '<div onclick="gotoSuggTab()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:6px;'+
+      'border:0.5px solid rgba(156,36,72,.35);border-radius:9px;background:rgba(253,238,243,.6);cursor:pointer;">'+
+      '<span style="font-size:12px;font-weight:700;flex-shrink:0;">🕐 도착예정 '+esc(s.eta||'—')+'</span>'+
+      '<span style="font-size:11px;opacity:.7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0;flex:1;">'+
+        esc([(s.guest||'게스트'),(s.room?s.room+'호':null),(s.checkinDate?'체크인 '+s.checkinDate:null)].filter(Boolean).join(' · '))+'</span>'+
+      '<span style="font-size:11px;font-weight:600;flex-shrink:0;">승인하기 →</span></div>'
+    ).join('');
+    if(pend.length) noti.lastElementChild && (noti.lastElementChild.style.marginBottom='10px');
   }
   const sCard=([id,s])=>{
     const meta=[(s.room?s.room+'호':null),(s.guest||null),(s.bookingId?('예약 '+s.bookingId):null),(s.checkinDate?('체크인 '+s.checkinDate):null)]
