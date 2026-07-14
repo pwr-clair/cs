@@ -577,6 +577,8 @@ function pollCsInbox() {
   if (fullRun) {
     // 즉석 답변 생성기 백업 경로(주 경로는 doPost 즉시). Claude 사용 → 게이트 이후.
     try { processManualQueue_(); } catch (e) { Logger.log('즉석 생성 큐 실패: ' + e); }
+    // 제안 반영 워커: 승인된 제안(eta 등)을 HK에 반영 (§3 예외 경로, urlfetch 소량)
+    try { applySuggestions_(); } catch (e) { Logger.log('제안 반영 워커 실패: ' + e); }
   }
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
   //   1분 run이라도 새 메일을 적재한 경우 여기 도달 → 바로 초안 생성(A안의 핵심: 1분 내 데스크 표시)
@@ -623,6 +625,8 @@ function ingestMessage_(msg, threadId) {
     parseFailed: !parsed.ok, // §6c: 파싱실패 플래그
     extractFailed: parsed.extractFailed || false, // 아고다 "메시지:" 라벨 못 찾음(껍데기 미적재) — 초안 스킵
     notice: parsed.notice || false,          // 부킹 알림류(요청/취소) — 초안 없이 데스크 알림 카드(2026-07-14)
+    eta: parsed.eta || null,                 // 알림에서 정형 추출된 도착예정 — 제안 탭 연료
+    etaEvidence: parsed.etaEvidence || null, // 근거 문장(제안 카드 인용 표시)
     bookingIdMismatch: parsed.bookingIdMismatch || false, // From/본문 예약번호 불일치 감지
     rawTail: parsed.rawTail || false, // 종료마커 못 찾아 message 전체 유지됨 플래그
     checkinDate: parsed.checkinDate || null,   // 예약 상세: 체크인 (YYYY-MM-DD)
@@ -692,12 +696,32 @@ function parseBookingNotice_(raw) {
   var m = subj.match(/^(.+?)[’']s\s+request/i);            // "JIE MA's request ..." → 게스트명
   if (m) out.guest = m[1].trim();
   var b = String(raw.body || '');
-  var bid = b.match(/\b(\d{10})\b/);                             // 부킹 원번호(10자리) 있으면 채집
-  if (bid) out.bookingId = bid[1];
+  var conf = b.match(/Confirmation number:?\s*(\d{6,})/i);       // "Confirmation number: 6898654837"
+  var bid = conf ? conf[1] : (b.match(/\b(\d{10})\b/) || [])[1]; // 폴백: 부킹 원번호(10자리)
+  if (bid) out.bookingId = bid;
+  // 예약 상세 날짜: "Check-in: Tue 21 Jul 2026" (요일 유무 모두 대응)
+  var ci = b.match(/Check-?in:?\s*(?:[A-Za-z]{3},?\s+)?(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})/i);
+  if (ci) out.checkinDate = engDate_(ci[1], ci[2], ci[3]);
+  var co = b.match(/Check-?out:?\s*(?:[A-Za-z]{3},?\s+)?(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})/i);
+  if (co) out.checkoutDate = engDate_(co[1], co[2], co[3]);
+  // ETA 요청 정형 추출: "request check-in at 19:00 - 20:00" → 제안 탭 연료 (2026-07-14)
+  var eta = b.match(/request\s+check-?in\s+(?:time\s+)?at\s+(\d{1,2}:\d{2})(?:\s*[-–~]\s*(\d{1,2}:\d{2}))?/i);
+  if (eta) {
+    out.eta = eta[1] + (eta[2] ? '-' + eta[2] : '');
+    var pos = b.indexOf(eta[0]);
+    out.etaEvidence = b.slice(Math.max(0, pos - 40), pos + eta[0].length + 60).replace(/\s+/g, ' ').trim();
+  }
   out.lang = 'en';
   var snippet = b.replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
   out.message = '[부킹 알림] ' + subj + (snippet ? '\n' + snippet : '');
   return out;
+}
+// 영문 날짜(21, Jul, 2026) → 'YYYY-MM-DD'. 월 약칭 미인식 시 null.
+function engDate_(d, mon, y) {
+  var M = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+            jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12' }[String(mon).slice(0, 3).toLowerCase()];
+  if (!M) return null;
+  return y + '-' + M + '-' + (String(d).length < 2 ? '0' + d : d);
 }
 
 // 종료마커: 게스트 메시지 뒤에 오는 booking 알림 고정 문자열(레거시·신형 공통).
@@ -981,13 +1005,30 @@ function processInboxToDrafts() {
     var id = ids[i], rec = inbox[id];
     if (!rec || rec.parseFailed) continue; // 파싱 실패건은 초안 생략(수동 처리)
     if (drafts[id]) continue;              // 이미 초안 있음(멱등)
-    if (rec.notice) {                      // 부킹 알림류: Claude 호출 없이 경량 알림 카드(확인만 하면 됨)
-      fbSet('cs/drafts/' + id, {
-        status: 'notice', origin: 'notice', category: '요청알림',
+    if (rec.notice) {                      // 부킹 알림류: Claude 호출 없이 처리(저비용)
+      var sv = findSirvoy_(rec.bookingId); // 방·숙박일자 보강 — 방금 들어온 예약이면 아직 null일 수 있음(제안 워커가 재시도)
+      var base = {
         guest: rec.guest || null, bookingId: rec.bookingId || null, channel: rec.source || 'booking',
+        sirvoyId: sv ? sv.sirvoyId : null, room: sv ? sv.room : null,
+        checkinDate: (sv && sv.checkinDate) || rec.checkinDate || null,
+        checkoutDate: (sv && sv.checkoutDate) || rec.checkoutDate || null,
         origMsg: (rec.parsed && rec.parsed.message) || (rec.raw && rec.raw.subject) || '',
         lang: rec.lang || 'en', receivedAt: rec.receivedAt || null, createdAt: new Date().toISOString()
-      });
+      };
+      if (rec.eta) {
+        // ETA 요청 알림 → 대기 카드 대신 '제안'으로 (2026-07-14 클라라 지시: 확인·치우기 대상이 아님)
+        fbSet('cs/suggestions/' + id, {
+          type: 'eta', status: 'pending', eta: rec.eta, evidence: rec.etaEvidence || '',
+          sourceMsgId: id, guest: base.guest, bookingId: base.bookingId, sirvoyId: base.sirvoyId,
+          room: base.room, checkinDate: base.checkinDate, checkoutDate: base.checkoutDate,
+          receivedAt: base.receivedAt, createdAt: base.createdAt
+        });
+        base.status = 'sugg'; base.origin = 'notice-eta'; // 대기 미표시 마커(멱등 가드 겸용)
+        fbSet('cs/drafts/' + id, base);
+      } else {
+        base.status = 'notice'; base.origin = 'notice'; base.category = '요청알림';
+        fbSet('cs/drafts/' + id, base);
+      }
       drafts[id] = true; continue;         // made 미집계(Claude 배치 한도와 무관한 저비용 건)
     }
     var msgText = (rec.parsed && rec.parsed.message) || '';
@@ -1355,6 +1396,83 @@ function diagPeekTasks(msgId) {
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
   finally { _diagRaw = false; }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 제안 반영 워커 — 승인된 cs/suggestions를 HK에 반영 (fullRun 5분 주기)
+//   §3 확정 설계의 유일한 app/* 쓰기 허용 경로: "suggestions 승인 반영".
+//   eta 제안: app/pendingBookings/{key}.eta 갱신 + app/rooms/* 해당 예약 checkinTime 동기화
+//   (HK GAS syncEtaToRoom과 동일 로직 — ETA 시작 시각만 checkinTime으로).
+//   Sirvoy 매핑 실패(웹훅 아직 안 옴)는 applyError 마킹 후 다음 run 자동 재시도.
+// ══════════════════════════════════════════════════════════════════
+function applySuggestions_() {
+  var sugg = fbGet('cs/suggestions'); if (!sugg) return;
+  var pendAll = null, roomsAll = null; // 필요할 때만 1회 로드(urlfetch 절약)
+  for (var id in sugg) {
+    var s = sugg[id];
+    if (!s || s.status !== 'approved') continue;
+    if (s.type !== 'eta' || !s.eta) {
+      fbUpdate('cs/suggestions/' + id, { status: 'applied', appliedAt: new Date().toISOString(), applyNote: '자동 반영 대상 아님' });
+      continue;
+    }
+    if (pendAll === null) pendAll = fbGet('app/pendingBookings') || {};
+    var key = (s.sirvoyId && pendAll[s.sirvoyId]) ? s.sirvoyId : null;
+    if (!key && s.bookingId) {
+      for (var k in pendAll) { var b = pendAll[k]; if (b && String(b.channelBookingId) === String(s.bookingId)) { key = k; break; } }
+    }
+    if (!key) {
+      fbUpdate('cs/suggestions/' + id, { applyError: 'Sirvoy 매핑 실패 — 웹훅 도착 대기, 자동 재시도 중', lastTriedAt: new Date().toISOString() });
+      continue;
+    }
+    var pendRec = pendAll[key];
+    fbUpdate('app/pendingBookings/' + key, { eta: s.eta });
+    var ciM = String(s.eta).match(/^(\d{1,2}):(\d{2})/);
+    if (ciM && pendRec && pendRec.bookingId) {
+      var ci = (String(ciM[1]).length < 2 ? '0' + ciM[1] : ciM[1]) + ':' + ciM[2];
+      if (roomsAll === null) roomsAll = fbGet('app/rooms') || {};
+      for (var rm in roomsAll) {
+        var r = roomsAll[rm]; if (!r) continue;
+        var changed = false;
+        if (r.currentBooking && String(r.currentBooking.bookingId) === String(pendRec.bookingId) && r.currentBooking.checkinTime !== ci) { r.currentBooking.checkinTime = ci; changed = true; }
+        if (Array.isArray(r.nextBookings)) {
+          for (var i2 = 0; i2 < r.nextBookings.length; i2++) {
+            var nb = r.nextBookings[i2];
+            if (nb && String(nb.bookingId) === String(pendRec.bookingId) && nb.checkinTime !== ci) { nb.checkinTime = ci; changed = true; }
+          }
+        }
+        if (changed) fbSet('app/rooms/' + rm, r);
+      }
+    }
+    fbUpdate('cs/suggestions/' + id, { status: 'applied', appliedAt: new Date().toISOString(), appliedTo: key, applyError: null });
+    Logger.log('제안 반영: ' + id + ' eta=' + s.eta + ' → ' + key);
+  }
+}
+
+// (1회성 마이그레이션) 이 기능 배포 전에 이미 '조치 알림' 카드로 뜬 ETA 요청들을 제안 탭으로 이동.
+//   실행: 함수 migrateNoticeEtasOnce 선택 → 실행 1회. 재실행해도 안전(notice 상태만 대상 → 멱등).
+function migrateNoticeEtasOnce() {
+  var drafts = fbGet('cs/drafts') || {}; var moved = 0;
+  for (var id in drafts) {
+    var d = drafts[id];
+    if (!d || d.status !== 'notice') continue;
+    var t = String(d.origMsg || '');
+    var eta = t.match(/request\s+check-?in\s+(?:time\s+)?at\s+(\d{1,2}:\d{2})(?:\s*[-–~]\s*(\d{1,2}:\d{2}))?/i);
+    if (!eta) continue;
+    var pos = t.indexOf(eta[0]);
+    var sv = findSirvoy_(d.bookingId);
+    fbSet('cs/suggestions/' + id, {
+      type: 'eta', status: 'pending', eta: eta[1] + (eta[2] ? '-' + eta[2] : ''),
+      evidence: t.slice(Math.max(0, pos - 40), pos + eta[0].length + 60).replace(/\s+/g, ' ').trim(),
+      sourceMsgId: id, guest: d.guest || null, bookingId: d.bookingId || null,
+      sirvoyId: (sv && sv.sirvoyId) || d.sirvoyId || null, room: (sv && sv.room) || d.room || null,
+      checkinDate: (sv && sv.checkinDate) || d.checkinDate || null,
+      checkoutDate: (sv && sv.checkoutDate) || d.checkoutDate || null,
+      receivedAt: d.receivedAt || null, createdAt: new Date().toISOString()
+    });
+    fbUpdate('cs/drafts/' + id, { status: 'sugg', origin: 'notice-eta' });
+    moved++;
+  }
+  Logger.log('알림→제안 이동: ' + moved + '건');
 }
 
 // ══════════════════════════════════════════════════════════════════

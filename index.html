@@ -247,7 +247,7 @@ button{font-family:inherit;}
     <div class="b-row">
       <div class="tile t-wait"><div class="n" id="nWait">0</div><div class="l">대기</div></div>
       <div class="tile t-task"><div class="n" id="nTask">—</div><div class="l">업무</div></div>
-      <div class="tile t-sugg"><div class="n">—</div><div class="l">제안</div></div>
+      <div class="tile t-sugg"><div class="n" id="nSugg">—</div><div class="l">제안</div></div>
       <div class="tile t-rate"><div class="n">—</div><div class="l">무수정 승인</div></div>
     </div>
     <div class="budget" id="gmailGauge">
@@ -276,7 +276,7 @@ button{font-family:inherit;}
   <div class="tabs">
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
     <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">—</span></button>
-    <button class="tab" onclick="showTab(2,this)">제안<span class="n">—</span></button>
+    <button class="tab" onclick="showTab(2,this)">제안<span class="n" id="tSugg">—</span></button>
     <button class="tab" onclick="showTab(3,this)">후기<span class="n">—</span></button>
     <button class="tab" onclick="showTab(4,this)"><span id="tSentLbl">보냄</span><span class="n" id="tSent">—</span></button>
   </div>
@@ -293,7 +293,10 @@ button{font-family:inherit;}
     <div id="taskList"></div>
     <div class="empty" id="emptyTask" style="display:none;"><div class="big">업무 후보 없음</div>게스트 문의에 나중에 처리할 요청이 있으면 여기에 후보로 올라옵니다.</div>
   </div>
-  <div class="pane" id="p2"><div class="empty"><div class="big">M2b-2 / M3</div>제안 탭은 이후 단계에서 연동됩니다.</div></div>
+  <div class="pane" id="p2">
+    <div id="suggList"></div>
+    <div class="empty" id="emptySugg" style="display:none;"><div class="big">제안 없음</div>게스트의 도착예정(ETA) 요청이 감지되면 여기에 올라옵니다. 승인하면 HK 대시보드에 자동 반영돼요(최대 5분).</div>
+  </div>
   <div class="pane" id="p3"><div class="empty"><div class="big">M2b-2 / M3</div>후기 탭은 이후 단계에서 연동됩니다.</div></div>
   <div class="pane" id="p4"><div id="sentList"></div></div>
 
@@ -334,6 +337,7 @@ let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기�
 let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let manualQueue={}; // cs/manualQueue (즉석 생성 요청 상태)
+let suggestions={}; // cs/suggestions (ETA 등 HK 반영 제안 — 승인 시 GAS 워커가 5분 내 반영)
 let edits={}, editingIds=new Set(); // 인라인 수정 버퍼(편집창 열림 동안)
 let committedEdit={}; // [저장]으로 확정한 편집본(승인이 이 값만 사용 → AI 초안 덮임 원천 차단)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
@@ -380,13 +384,14 @@ function startListeners(){
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
+  onValue(ref(db,'cs/suggestions'), snap=>{ suggestions = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderSugg(); }, permErr('cs/suggestions'));
   onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
   onValue(ref(db,'cs/manualQueue'), snap=>{ manualQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn){ renderGenStatus(); renderWait(); } }, permErr('cs/manualQueue'));
   onValue(ref(db,'cs/meta/gmailBudget'), snap=>{ budgetData = snap.exists()?snap.val():null; if(isLoggedIn)renderBudget(); }, permErr('cs/meta/gmailBudget'));
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderSent(); renderTasks(); renderAuto(); renderBudget(); renderGenStatus(); }
+function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); renderAuto(); renderBudget(); renderGenStatus(); }
 // (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
 function reconcileOptimistic(){
   optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
@@ -716,6 +721,50 @@ function rejectTask(id){ update(ref(db,'cs/tasks/'+id),{status:'rejected',reject
 function toggleTaskDone(id){ const cur=(tasks[id]||{}).status; const next=cur==='done'?'active':'done';
   update(ref(db,'cs/tasks/'+id),{status:next,doneAt:next==='done'?new Date().toISOString():null}).then(()=>toast(next==='done'?'완료 처리':'진행으로 되돌림')).catch(e=>toast('실패: 쓰기 권한')); }
 
+// ── 제안 탭 (2026-07-14): cs/suggestions — ETA 감지 → 승인 시 GAS 워커가 HK 반영(최대 5분) ──
+function renderSugg(){
+  const listEl=document.getElementById('suggList'); if(!listEl) return;
+  const entries=Object.keys(suggestions||{}).map(k=>[k,suggestions[k]]).filter(([k,s])=>!!s)
+    .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
+  const pend=entries.filter(([k,s])=>s.status==='pending');
+  const done=entries.filter(([k,s])=>s.status!=='pending').slice(0,8); // 최근 처리분 몇 개만
+  const nEl=document.getElementById('nSugg'); if(nEl) nEl.textContent=pend.length;
+  const tEl=document.getElementById('tSugg'); if(tEl) tEl.textContent=pend.length;
+  const emptyEl=document.getElementById('emptySugg');
+  if(emptyEl) emptyEl.style.display=(pend.length||done.length)?'none':'block';
+  const sCard=([id,s])=>{
+    const meta=[(s.room?s.room+'호':null),(s.guest||null),(s.bookingId?('예약 '+s.bookingId):null),(s.checkinDate?('체크인 '+s.checkinDate):null)]
+      .filter(Boolean).join(' · ');
+    let state='';
+    if(s.status==='approved') state='<span class="status approved"><span class="spinner"></span>'+esc(s.applyError||'HK 반영 대기 (최대 5분)')+'</span>';
+    else if(s.status==='applied') state='<span class="status approved">HK 반영됨 ✓'+(s.appliedTo?(' → '+esc(s.appliedTo)):'')+'</span>';
+    else if(s.status==='rejected') state='<span class="status">기각됨</span>';
+    const btns=s.status==='pending'
+      ? '<div class="btns"><button class="b skip" onclick="rejectSugg(\''+id+'\')">기각</button>'+
+        '<button class="b go" onclick="approveSugg(\''+id+'\')">승인 → HK 반영</button></div>' : '';
+    return '<div class="card">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px;">'+
+        '<b style="font-size:13px;">🕐 도착예정 '+esc(s.eta||'—')+'</b>'+state+'</div>'+
+      '<div style="font-size:11px;opacity:.65;margin-bottom:6px;">'+esc(meta||'예약 매핑 정보 없음 — 반영 시 자동 재매칭')+'</div>'+
+      (s.evidence?'<div style="font-size:12px;border-left:2px solid rgba(127,127,127,.4);padding-left:8px;opacity:.8;margin-bottom:8px;">“'+esc(s.evidence)+'”</div>':'')+
+      btns+'</div>';
+  };
+  listEl.innerHTML=pend.map(sCard).join('')+
+    (done.length?'<div style="font-size:10px;opacity:.5;margin:10px 0 6px;">최근 처리</div>'+done.map(sCard).join(''):'');
+}
+function approveSugg(id){
+  const s=suggestions[id];
+  if(!s || s.status!=='pending'){ toast('이미 처리된 제안입니다'); return; }
+  update(ref(db,'cs/suggestions/'+id),{status:'approved',approvedAt:new Date().toISOString()})
+    .then(()=>toast('승인 — 5분 내 HK에 반영됩니다')).catch(e=>toast('실패: 쓰기 권한'));
+}
+function rejectSugg(id){
+  const s=suggestions[id];
+  if(!s || s.status!=='pending'){ toast('이미 처리된 제안입니다'); return; }
+  update(ref(db,'cs/suggestions/'+id),{status:'rejected',rejectedAt:new Date().toISOString()})
+    .then(()=>toast('제안 기각')).catch(e=>toast('실패: 쓰기 권한'));
+}
+
 // ── 즉석 답변 생성기 (cs/manualQueue → GAS Claude 1회 → cs/drafts 대기) ──
 function generateInstant(){
   const box=document.getElementById('genBox'); const text=(box&&box.value||'').trim();
@@ -921,6 +970,7 @@ window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.editInput
 window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
 window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant; window.dismissGenErr=dismissGenErr;
+window.approveSugg=approveSugg; window.rejectSugg=rejectSugg;
 </script>
 </body>
 </html>
