@@ -473,38 +473,72 @@ function publishSaveHookUrl() {
 }
 
 // ---- 트리거 설치 (Clara 수동 실행 전용 — 자동 설치 금지) ----
-// 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 5분 주기 1개만 설치.
+// 이 프로젝트(PWR-CS-Engine)의 기존 트리거 전부 삭제 후 pollCsInbox 1분 주기 1개만 설치.
+// (A안 2026-07-14: 5분→1분. 아이들 run은 Gmail 2회로 즉시 종료라 안전 — pollCsInbox 상단 주석 참조)
 function installCsTriggers() {
   var trg = ScriptApp.getProjectTriggers(); // 이 프로젝트 한정 — HK와 무관
   var removed = 0;
   for (var i = 0; i < trg.length; i++) { ScriptApp.deleteTrigger(trg[i]); removed++; }
-  ScriptApp.newTrigger('pollCsInbox').timeBased().everyMinutes(5).create();
-  Logger.log('CS 트리거 재설치: 기존 ' + removed + '개 삭제 → pollCsInbox 5분 주기 1개 설치');
+  ScriptApp.newTrigger('pollCsInbox').timeBased().everyMinutes(1).create();
+  Logger.log('CS 트리거 재설치: 기존 ' + removed + '개 삭제 → pollCsInbox 1분 주기 1개 설치 (A안)');
+}
+
+// (진단) 즉시경로 점검 — diagImmediatePath()
+//   ①웹앱 배포 URL vs 등록된 saveHookUrl 일치 여부 ②최근 즉석 생성 요청 10건의 상태·소요·에러를 로그로.
+//   실행: 함수 diagImmediatePath 선택 → 실행 → 로그 복사. urlfetch 2회(읽기), Claude 0회.
+function diagImmediatePath() {
+  var deployed = ScriptApp.getService().getUrl() || '(미배포)';
+  var hook = fbGet('cs/config/saveHookUrl') || '(미등록)';
+  Logger.log('웹앱 배포 URL : ' + deployed);
+  Logger.log('등록 saveHookUrl: ' + hook);
+  Logger.log(deployed === hook ? '→ 일치 (정상)' : '→ ⚠ 불일치! publishSaveHookUrl 재실행 필요');
+  if (String(hook).indexOf('/dev') >= 0) Logger.log('→ ⚠ /dev URL — 익명 호출 거부됨. 웹앱 새 버전(/exec) 배포 후 publishSaveHookUrl 재실행');
+  if (String(hook).indexOf('/exec') < 0 && hook !== '(미등록)') Logger.log('→ ⚠ /exec로 끝나지 않음 — 등록값 확인 필요');
+  var q = fbGet('cs/manualQueue') || {};
+  var ids = Object.keys(q).sort().slice(-10);
+  Logger.log('--- 최근 즉석 생성 요청 ' + ids.length + '건 (오래된 순) ---');
+  for (var i = 0; i < ids.length; i++) {
+    var v = q[ids[i]] || {};
+    var lag = (v.createdAt && v.doneAt) ? (' | 소요 ' + Math.round((Date.parse(v.doneAt) - Date.parse(v.createdAt)) / 1000) + 's') : '';
+    Logger.log(ids[i] + ' | ' + (v.status || '?') + ' | 요청 ' + (v.createdAt || '?') + lag + (v.error ? ' | 에러: ' + v.error : ''));
+  }
+  Logger.log('판독: 소요 5~40s=즉시경로 정상 / 소요 수 분=폴링 폴백만 동작(URL·액세스 문제) / pending 방치=doPost 미도달 / error=원인 그대로.');
 }
 
 function safeDrafts_() { try { processInboxToDrafts(); } catch (e) { Logger.log('draft 파이프라인 실패: ' + e); } }
 
 function pollCsInbox() {
-  // (Q2) 학습모드 저장 워커 — 쿨다운 게이트 '앞'에서 먼저 실행.
+  // (A안 2026-07-14) 1분 트리거 + 저비용 아이들 run:
+  //   매 1분 = Gmail 라벨만 선체크(읽기 2회, urlfetch 0회). 새 메일 없으면 그 자리에서 종료.
+  //   5분 슬롯(분%5==0) = 기존 풀 사이클(저장·정정·즉석큐 백업·자동승인·발송·예산 미러) 그대로.
+  //   → 메일→데스크 우리 몫 지연: 평균 2.5분→약 30초, 최악 5분→약 1분. urlfetch 총량 불변.
+  //   ⚠ Gmail 읽기 카운트 ~3천/일로 증가 — 스크립트 속성 CS_GMAIL_BUDGET 8000 권장(실쿼터 2만/일 대비 안전).
+  var fullRun = (new Date().getMinutes() % 5 === 0);
+  var label = gmGetLabel_(CS_LABEL);
+  var pendingThreads = (label && !_gmailStop) ? gmGetThreads_(label, 0, 20) : [];
+  if (!fullRun && !pendingThreads.length) return; // 아이들 1분 run 종료(Gmail 2회뿐, fb/Claude 미접촉)
+
+  // (Q2) 학습모드 저장 워커 — 쿨다운 게이트 '앞'에서 먼저 실행 (풀 사이클에서만 — 주 경로는 doPost 즉시).
   //   쿨다운은 '비싼 초안 대량생성' 방어용 자체 타이머라, 저비용(소수 읽기+시트 native)인 저장까지
   //   막을 이유가 없음. 실제 하드 소진이면 saveApprovedToSheet_ 첫 fbGet 에서 예외 → 여기서 catch(자기노출).
-  try { saveApprovedToSheet_(); } catch (e) { Logger.log('학습 저장 워커 실패(=urlfetch 하드 소진 가능): ' + e); }
-  try { correctSavedRows_(); } catch (e) { Logger.log('학습 정정 워커 실패: ' + e); } // (2) 재편집 행 갱신(백업 경로)
+  if (fullRun) {
+    try { saveApprovedToSheet_(); } catch (e) { Logger.log('학습 저장 워커 실패(=urlfetch 하드 소진 가능): ' + e); }
+    try { correctSavedRows_(); } catch (e) { Logger.log('학습 정정 워커 실패: ' + e); } // (2) 재편집 행 갱신(백업 경로)
+  }
 
   if (urlfetchCooldownActive_()) return; // urlfetch 쿨다운 중: 이하 초안 대량생성·발송은 skip. 만료 시 내부에서 해제 후 진행.
-  var label = gmGetLabel_(CS_LABEL);
-  if (_gmailStop) { safeDrafts_(); return; }
-  if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); safeDrafts_(); return; }
+  if (_gmailStop) { if (fullRun) safeDrafts_(); return; }
+  if (!label) { Logger.log('라벨 없음: ' + CS_LABEL + ' — §6f 필터 확인'); if (fullRun) safeDrafts_(); return; }
 
   var doneLabel = gmGetLabel_(CS_DONE_LABEL) || gmCreateLabel_(CS_DONE_LABEL);
-  if (_gmailStop || !doneLabel) { safeDrafts_(); return; }
+  if (_gmailStop || !doneLabel) { if (fullRun) safeDrafts_(); return; }
 
   // 저연비: 처리 완료 스레드는 CS_LABEL에서 제거(라벨 이동)하므로 매 run 미처리분만 조회됨.
   // (멱등 이중 안전판: ingestMessage_ 의 fbGet 존재체크가 재적재 방지)
   // 백로그 컷오프(B): CS_CUTOFF 이전 스레드는 초안·적재 건너뛰고 라벨만 이동(urlfetch 미사용).
   var cutoffMs = cutoffMs_(PropertiesService.getScriptProperties().getProperty('CS_CUTOFF'));
   var cutoffSkipped = 0;
-  var threads = gmGetThreads_(label, 0, 20);
+  var threads = pendingThreads; // 위 선체크에서 이미 조회(Gmail 재호출 없음)
   for (var t = 0; t < threads.length && !_gmailStop; t++) {
     var msgs = gmGetMessages_(threads[t]);
     if (_gmailStop) break;
@@ -523,14 +557,19 @@ function pollCsInbox() {
   }
   if (cutoffSkipped) Logger.log('컷오프 이전 — 초안 스킵: ' + cutoffSkipped + '건');
 
-  // 즉석 답변 생성기 백업 경로(주 경로는 doPost 즉시). Claude 사용 → 게이트 이후.
-  try { processManualQueue_(); } catch (e) { Logger.log('즉석 생성 큐 실패: ' + e); }
+  if (fullRun) {
+    // 즉석 답변 생성기 백업 경로(주 경로는 doPost 즉시). Claude 사용 → 게이트 이후.
+    try { processManualQueue_(); } catch (e) { Logger.log('즉석 생성 큐 실패: ' + e); }
+  }
   // 초안 생성은 Gmail 미사용 → 예산과 무관하게 항상 진행 (수신과 분리)
+  //   1분 run이라도 새 메일을 적재한 경우 여기 도달 → 바로 초안 생성(A안의 핵심: 1분 내 데스크 표시)
   safeDrafts_();
-  // autoSend: ON & confidence>=0.8 → 자동 승인 (Firebase만, Gmail 미사용)
-  try { autoApprovePass_(); } catch (e) { Logger.log('autoApprove 실패: ' + e); }
-  // 발송 워커: approved → 원 스레드 reply + 학습 (예산 가드). 발송 실패가 위 단계를 막지 않음.
-  try { sendApprovedDrafts(); } catch (e) { Logger.log('발송 워커 실패: ' + e); }
+  if (fullRun) {
+    // autoSend: ON & confidence>=0.8 → 자동 승인 (Firebase만, Gmail 미사용)
+    try { autoApprovePass_(); } catch (e) { Logger.log('autoApprove 실패: ' + e); }
+    // 발송 워커: approved → 원 스레드 reply + 학습 (예산 가드). 발송 실패가 위 단계를 막지 않음.
+    try { sendApprovedDrafts(); } catch (e) { Logger.log('발송 워커 실패: ' + e); }
+  }
   mirrorBudget_(); // run 종료 시 예산 사용량 미러링 (fetchUsed 포함)
   Logger.log('이번 run fetch: ' + _fetchRunCount + '회'); // urlfetch 소비 패턴 분석용
 }
