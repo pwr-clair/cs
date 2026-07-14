@@ -1425,6 +1425,12 @@ function applySuggestions_() {
       continue;
     }
     var pendRec = pendAll[key];
+    // 취소된 예약이면 반영하지 않고 종결 (2026-07-14 martina 건 — 요청 알림 후 취소된 예약에 반영됐던 구멍)
+    if (pendRec && pendRec.cancelled) {
+      fbUpdate('cs/suggestions/' + id, { status: 'rejected', applyNote: '취소된 예약 — 반영 안 함', rejectedAt: new Date().toISOString() });
+      Logger.log('제안 기각(취소된 예약): ' + id + ' → ' + key);
+      continue;
+    }
     fbUpdate('app/pendingBookings/' + key, { eta: s.eta });
     var ciM = String(s.eta).match(/^(\d{1,2}):(\d{2})/);
     if (ciM && pendRec && pendRec.bookingId) {
@@ -1446,6 +1452,27 @@ function applySuggestions_() {
     fbUpdate('cs/suggestions/' + id, { status: 'applied', appliedAt: new Date().toISOString(), appliedTo: key, applyError: null });
     Logger.log('제안 반영: ' + id + ' eta=' + s.eta + ' → ' + key);
   }
+}
+
+// (1회성 정정) 이미 '반영됨' 처리된 제안 중 취소된 예약 건을 기각으로 정정 (2026-07-14 martina 건).
+//   실행: 함수 voidCancelledAppliedOnce 선택 → 실행 1회. HK 안내판에서도 해당 줄이 사라짐.
+function voidCancelledAppliedOnce() {
+  var sugg = fbGet('cs/suggestions') || {};
+  var pendAll = fbGet('app/pendingBookings') || {};
+  var n = 0;
+  for (var id in sugg) {
+    var s = sugg[id];
+    if (!s || s.status !== 'applied') continue;
+    var rec = (s.appliedTo && pendAll[s.appliedTo]) || null;
+    if (!rec && s.bookingId) {
+      for (var k in pendAll) { var b = pendAll[k]; if (b && String(b.channelBookingId) === String(s.bookingId)) { rec = b; break; } }
+    }
+    if (rec && rec.cancelled) {
+      fbUpdate('cs/suggestions/' + id, { status: 'rejected', applyNote: '취소된 예약 — 반영 취소 정정', rejectedAt: new Date().toISOString() });
+      n++;
+    }
+  }
+  Logger.log('취소예약 반영분 정정: ' + n + '건');
 }
 
 // (1회성 마이그레이션) 이 기능 배포 전에 이미 '조치 알림' 카드로 뜬 ETA 요청들을 제안 탭으로 이동.
@@ -1540,6 +1567,7 @@ function findSirvoy_(bookingId) {
   var p = loadPending_();
   for (var key in p) {
     var b = p[key];
+    if (b && b.cancelled) continue; // 취소된 예약은 매칭 제외(방·일자 보강에 취소 기록 오염 방지, 2026-07-14)
     if (b && String(b.channelBookingId) === String(bookingId))
       // 방번호·숙박일자를 같은 HK 레코드에서 함께 반환(HK index.html:1268 확인 — checkinDate/checkoutDate/assignedRoom 동일 레코드).
       return { sirvoyId: key, room: (b.assignedRoom || null),

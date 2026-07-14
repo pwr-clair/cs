@@ -755,7 +755,7 @@ function renderSugg(){
     let state='';
     if(s.status==='approved') state='<span class="status approved"><span class="spinner"></span>'+esc(s.applyError||'HK 반영 대기 (최대 5분)')+'</span>';
     else if(s.status==='applied') state='<span class="status approved">HK 반영됨 ✓'+(s.appliedTo?(' → '+esc(s.appliedTo)):'')+'</span>';
-    else if(s.status==='rejected') state='<span class="status">기각됨</span>';
+    else if(s.status==='rejected') state='<span class="status">기각됨'+(s.applyNote?(' · '+esc(s.applyNote)):'')+'</span>';
     const btns=s.status==='pending'
       ? '<div class="btns"><button class="b skip" onclick="rejectSugg(\''+id+'\')">기각</button>'+
         '<button class="b go" onclick="approveSugg(\''+id+'\')">승인 → HK 반영</button></div>' : '';
