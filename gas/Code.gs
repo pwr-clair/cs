@@ -160,6 +160,14 @@ function gmailUsedKey_() {
   return 'CS_GMAIL_USED_' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
 }
 function budgetAllows_(used, budget, n) { return (budget - used) >= (n || 1); } // 순수(테스트용)
+// 부작용 없는 예산 엿보기 — 카운트 누적 없음(실제 카운트는 발송 시 budgetGate_('reply')가 담당).
+// sendApprovedDrafts가 초안을 sending으로 잠그기 전에 호출: 소진이면 approved 유지 → 다음 run/날 재시도.
+function gmailAllowed_(n) {
+  var p = PropertiesService.getScriptProperties();
+  var budget = parseInt(p.getProperty('CS_GMAIL_BUDGET') || '150', 10);
+  var used = parseInt(p.getProperty(gmailUsedKey_()) || '0', 10);
+  return budgetAllows_(used, budget, n);
+}
 function budgetGate_(op) {
   if (_gmailStop) return false;
   var p = PropertiesService.getScriptProperties();
@@ -328,7 +336,7 @@ function ensureSelfScoreHeader_(sheet) {
 //   클라라는 비영어권=한국어(replyKo), 영어권=영어(reply)로 편집(claraFinal/claraFinalLang).
 //   발송본: 게스트 언어==편집 언어면 그대로 / 미편집이면 Claude 원문(reply, 이미 게스트 언어) /
 //           편집됐고 언어 다르면 LanguageApp 번역. 타깃 코드 불명(guessLang_의 'eu' 등)이면 원문 폴백.
-function langToIso_(l) { var M = { en:'en', ko:'ko', ja:'ja', zh:'zh', ru:'ru', th:'th' }; return M[String(l||'').toLowerCase()] || null; }
+function langToIso_(l) { return /^(en|ko|ja|zh|ru|th)$/.test(String(l||'').toLowerCase()) ? String(l).toLowerCase() : null; }
 function resolveGuestFinal_(d) {
   var editLang = d.claraFinalLang || (String(d.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
   var claraFinal = String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '');
@@ -1290,50 +1298,6 @@ function saveTaskCandidates_(msgId, tasks, rec) {
   if (n) Logger.log('업무 후보 저장: ' + n + '건 (msg ' + msgId + ')');
 }
 
-// (2b) 1회성 백필: receivedAt 없는 기존 draft에 inbox의 receivedAt 승계.
-//   - 추가만(다른 필드·상태 불변), 멱등(이미 있으면 스킵). 발송/예산/파서 미접촉.
-//   - Gmail 미사용(fbGet/fbUpdate만) → 예산 미차감. 백로그 정렬·지난문의 판별 정확도 확보용.
-//   Clara가 GAS 에디터에서 1회 실행.
-function backfillDraftReceivedAt() {
-  var drafts = fbGet('cs/drafts'); if (!drafts) { Logger.log('drafts 없음'); return; }
-  var inbox = fbGet('cs/inbox') || {};
-  var ids = Object.keys(drafts), filled = 0, skipped = 0, noSrc = 0;
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i], d = drafts[id];
-    if (!d) continue;
-    if (d.receivedAt) { skipped++; continue; }            // 이미 있음 → 멱등 스킵
-    var src = (inbox[id] || {}).receivedAt;
-    if (!src) { noSrc++; continue; }                        // inbox에 없으면 앱이 createdAt 폴백
-    fbUpdate('cs/drafts/' + id, { receivedAt: src });       // 추가만
-    filled++;
-  }
-  Logger.log('backfill 완료 — 채움:' + filled + ' / 이미있음:' + skipped + ' / inbox없음:' + noSrc);
-}
-
-// (2d·Q1) 1회성 백필: 기존 draft의 숙박일자를 HK app/pendingBookings 기준으로 다시 채움.
-//   - 우선순위: HK 레코드(방번호와 동일 경로, findSirvoy_) > 기존 draft값 > 파서(inbox)값. HK 값이 있으면 덮어씀.
-//   - 값이 실제로 바뀔 때만 fbUpdate(멱등·불필요쓰기 방지). 다른 필드·상태 불변. Gmail 미사용(fbGet/fbUpdate만).
-//   - HK·inbox 둘 다 없으면 그대로 두고 DESK가 '숙박일자 미상' 표시.
-//   Clara가 GAS 에디터에서 1회 실행.
-function backfillDraftStayDates() {
-  var drafts = fbGet('cs/drafts'); if (!drafts) { Logger.log('drafts 없음'); return; }
-  var inbox = fbGet('cs/inbox') || {};
-  var ids = Object.keys(drafts), fromHk = 0, fromInbox = 0, unchanged = 0, none = 0;
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i], d = drafts[id];
-    if (!d) continue;
-    var sv = findSirvoy_(d.bookingId);                 // HK 레코드(loadPending_ 캐시 사용)
-    var src = inbox[id] || {};
-    var ci = (sv && sv.checkinDate)  || d.checkinDate  || src.checkinDate  || null;
-    var co = (sv && sv.checkoutDate) || d.checkoutDate || src.checkoutDate || null;
-    if (!ci && !co) { none++; continue; }              // 어디에도 없음 → 미상 유지
-    if (ci === (d.checkinDate || null) && co === (d.checkoutDate || null)) { unchanged++; continue; } // 변화 없음
-    fbUpdate('cs/drafts/' + id, { checkinDate: ci, checkoutDate: co });
-    if (sv && (sv.checkinDate || sv.checkoutDate)) fromHk++; else fromInbox++;
-  }
-  Logger.log('stay dates backfill(HK 우선) — HK채움:' + fromHk + ' / inbox채움:' + fromInbox + ' / 변화없음:' + unchanged + ' / 소스없음:' + none);
-}
-
 // (2c) 1회성 백로그 정리: 현재 pending(또는 status 없음) draft 전체를 dismissed로 전환.
 //   - 삭제 아님(원문·필드 전부 보존) — status/dismissedAt 만 바꿈. 발송·학습 제외(앱 dismiss와 동일 의미).
 //   - 앱의 bulkDismiss와 달리 시각 임계값 없음: 오늘 새벽 밀려든 백로그까지 현재 pending 전부 대상.
@@ -1355,45 +1319,6 @@ function cleanupPendingBacklog() {
   if (n > 0) fbUpdate('cs/drafts', patch);
   Logger.log('백로그 pending 일괄 dismiss: ' + n + '건 (삭제 아님·보존, 발송·학습 제외)');
   return n;
-}
-
-// (임시·읽기전용) 실물 raw 확인용 — 교훈① 실물 선행. 파서 마커를 손대기 전/후 육안 교차검증.
-//   cs/inbox에서 booking/agoda 각 최대 3건의 raw.body를 통째 Logger.log로 덤프.
-//   fbGet만 → Gmail 미접촉(예산 무관, urlfetch만). 트리거 아님 — Clara가 GAS에서 1회 실행 후 로그 확인.
-//   확인이 끝나면 이 함수는 삭제해도 됨.
-function dumpInboxRawSamples() {
-  var inbox = fbGet('cs/inbox'); if (!inbox) { Logger.log('cs/inbox 비어있음'); return; }
-  var want = { booking: 3, agoda: 3 }, seen = { booking: 0, agoda: 0 };
-  var ids = Object.keys(inbox);
-  for (var i = 0; i < ids.length; i++) {
-    var id = ids[i], r = inbox[id]; if (!r || !r.raw) continue;
-    var ch = r.source || detectChannel_(r.raw.from);
-    if (ch !== 'booking' && ch !== 'agoda' || seen[ch] >= want[ch]) continue;
-    seen[ch]++;
-    Logger.log('\n===== [' + ch + ' #' + seen[ch] + '] msgId=' + id + ' =====');
-    Logger.log('FROM: ' + r.raw.from);
-    Logger.log('SUBJECT: ' + r.raw.subject);
-    Logger.log('----- BODY START -----\n' + r.raw.body + '\n----- BODY END -----');
-    if (seen.booking >= want.booking && seen.agoda >= want.agoda) break;
-  }
-  Logger.log('\n덤프 완료 — booking:' + seen.booking + ' / agoda:' + seen.agoda + ' (마커 수정 결과와 육안 대조)');
-}
-
-// (진단) 기존 아고다 오추출 범위 — cs/inbox의 아고다 레코드 중 parsed.message가 껍데기로 보이는 건 카운트.
-//   fbGet만(Gmail 미접촉·무료). Clara가 GAS에서 1회 실행. 소급 재파싱은 별도 결정(자동 실행 안 함).
-function countAgodaShellMessages() {
-  var inbox = fbGet('cs/inbox'); if (!inbox) { Logger.log('cs/inbox 비어있음'); return; }
-  var ids = Object.keys(inbox), agoda = 0, shell = 0, samples = [];
-  var SHELL = /안녕하세요|여행객에게서 온 메시지|\[새 메시지\]|문의 사항\s*\(발신/;
-  for (var i = 0; i < ids.length; i++) {
-    var r = inbox[ids[i]]; if (!r) continue;
-    var ch = r.source || (r.raw && detectChannel_(r.raw.from));
-    if (ch !== 'agoda') continue;
-    agoda++;
-    var m = (r.parsed && r.parsed.message) || '';
-    if (SHELL.test(m)) { shell++; if (samples.length < 8) samples.push(ids[i] + '(' + (r.bookingId || '?') + ')'); }
-  }
-  Logger.log('아고다 inbox: ' + agoda + '건 / 껍데기 오추출 추정: ' + shell + '건.\n표본: ' + samples.join(', '));
 }
 
 // corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)
@@ -1546,54 +1471,6 @@ function applySuggestions_() {
     fbUpdate('cs/suggestions/' + id, { status: 'applied', appliedAt: new Date().toISOString(), appliedTo: key, applyError: null });
     Logger.log('제안 반영: ' + id + ' eta=' + s.eta + ' → ' + key);
   }
-}
-
-// (1회성 정정) 이미 '반영됨' 처리된 제안 중 취소된 예약 건을 기각으로 정정 (2026-07-14 martina 건).
-//   실행: 함수 voidCancelledAppliedOnce 선택 → 실행 1회. HK 안내판에서도 해당 줄이 사라짐.
-function voidCancelledAppliedOnce() {
-  var sugg = fbGet('cs/suggestions') || {};
-  var pendAll = fbGet('app/pendingBookings') || {};
-  var n = 0;
-  for (var id in sugg) {
-    var s = sugg[id];
-    if (!s || s.status !== 'applied') continue;
-    var rec = (s.appliedTo && pendAll[s.appliedTo]) || null;
-    if (!rec && s.bookingId) {
-      for (var k in pendAll) { var b = pendAll[k]; if (b && String(b.channelBookingId) === String(s.bookingId)) { rec = b; break; } }
-    }
-    if (rec && rec.cancelled) {
-      fbUpdate('cs/suggestions/' + id, { status: 'rejected', applyNote: '취소된 예약 — 반영 취소 정정', rejectedAt: new Date().toISOString() });
-      n++;
-    }
-  }
-  Logger.log('취소예약 반영분 정정: ' + n + '건');
-}
-
-// (1회성 마이그레이션) 이 기능 배포 전에 이미 '조치 알림' 카드로 뜬 ETA 요청들을 제안 탭으로 이동.
-//   실행: 함수 migrateNoticeEtasOnce 선택 → 실행 1회. 재실행해도 안전(notice 상태만 대상 → 멱등).
-function migrateNoticeEtasOnce() {
-  var drafts = fbGet('cs/drafts') || {}; var moved = 0;
-  for (var id in drafts) {
-    var d = drafts[id];
-    if (!d || d.status !== 'notice') continue;
-    var t = String(d.origMsg || '');
-    var eta = t.match(/request\s+check-?in\s+(?:time\s+)?at\s+(\d{1,2}:\d{2})(?:\s*[-–~]\s*(\d{1,2}:\d{2}))?/i);
-    if (!eta) continue;
-    var pos = t.indexOf(eta[0]);
-    var sv = findSirvoy_(d.bookingId);
-    fbSet('cs/suggestions/' + id, {
-      type: 'eta', status: 'pending', eta: eta[1] + (eta[2] ? '-' + eta[2] : ''),
-      evidence: t.slice(Math.max(0, pos - 40), pos + eta[0].length + 60).replace(/\s+/g, ' ').trim(),
-      sourceMsgId: id, guest: d.guest || null, bookingId: d.bookingId || null,
-      sirvoyId: (sv && sv.sirvoyId) || d.sirvoyId || null, room: (sv && sv.room) || d.room || null,
-      checkinDate: (sv && sv.checkinDate) || d.checkinDate || null,
-      checkoutDate: (sv && sv.checkoutDate) || d.checkoutDate || null,
-      receivedAt: d.receivedAt || null, createdAt: new Date().toISOString()
-    });
-    fbUpdate('cs/drafts/' + id, { status: 'sugg', origin: 'notice-eta' });
-    moved++;
-  }
-  Logger.log('알림→제안 이동: ' + moved + '건');
 }
 
 // ══════════════════════════════════════════════════════════════════

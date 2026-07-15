@@ -59,7 +59,6 @@ button{font-family:inherit;}
 .tile.t-wait .l{color:#A85A4F;}
 .tile.t-task .n{color:#C8552F;}
 .tile.t-sugg .n{color:var(--night);}
-.tile.t-rate .n{color:var(--go);}
 
 .budget{display:flex;align-items:center;gap:8px;margin-top:9px;}
 .budget .bl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--muted);min-width:34px;}
@@ -135,13 +134,6 @@ button{font-family:inherit;}
 .thumb{position:relative;width:96px;height:66px;border-radius:8px;overflow:hidden;border:1px solid var(--line);flex-shrink:0;display:block;background:var(--paper);}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .thumb span{position:absolute;left:0;right:0;bottom:0;font-size:8px;color:#fff;background:rgba(20,26,33,.66);padding:2px 4px;text-align:center;}
-.conf{display:flex;align-items:center;gap:7px;margin-bottom:11px;flex-wrap:wrap;}
-.conf .lbl{font-size:9.5px;color:var(--ink2);}
-.conf .dots{display:flex;gap:3px;}
-.conf .d{width:15px;height:4px;border-radius:100px;background:var(--line);}
-.conf .d.f{background:var(--go);}
-.conf.low .d.f{background:var(--amber);}
-.conf .note{font-size:9px;color:var(--muted);}
 /* 말투 일치 — 클라라 자기평가(수동 탭, 기본 빈칸). AI confidence와 무관. */
 .tone{display:flex;align-items:center;gap:8px;margin-bottom:11px;flex-wrap:wrap;}
 .tone .tlbl{font-size:9.5px;color:var(--ink2);}
@@ -248,7 +240,6 @@ button{font-family:inherit;}
       <div class="tile t-wait"><div class="n" id="nWait">0</div><div class="l">대기</div></div>
       <div class="tile t-task"><div class="n" id="nTask">—</div><div class="l">업무</div></div>
       <div class="tile t-sugg"><div class="n" id="nSugg">—</div><div class="l">제안</div></div>
-      <div class="tile t-rate"><div class="n">—</div><div class="l">무수정 승인</div></div>
     </div>
     <div class="budget" id="gmailGauge">
       <span class="bl">GMAIL</span>
@@ -564,7 +555,7 @@ function renderWait(){
   const empty=document.getElementById('emptyWait');
   const bulkBar=document.getElementById('bulkBar');
   // 타임라인 대상 = dismissed·sent 제외한 모든 대화 메시지(답한 것 포함해 맥락으로 표시)
-  const convo=Object.keys(drafts||{}).map(k=>[k,drafts[k]])
+  const convo=Object.entries(drafts||{})
     .filter(([k,d])=> d && (d.status||'pending')!=='dismissed' && d.status!=='sent');
   // 대기 카운터 = 조작 필요 '건'(메시지 단위, dismissed 제외)
   const actionableEntries=convo.filter(([k,d])=>isActionable_(k,d));
@@ -598,7 +589,7 @@ function renderWait(){
 // 즉석 생성 요청(cs/manualQueue pending)을 대기 상단에 '생성 중' 낙관적 카드로. 30초+ 지속 시 지연 경고(=즉시경로 미작동 신호).
 function manualPendingCards(){
   const now=Date.now();
-  const pend=Object.keys(manualQueue||{}).map(k=>[k,manualQueue[k]])
+  const pend=Object.entries(manualQueue||{})
     .filter(([k,v])=>v && v.status==='pending')
     .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
   if(!pend.length) return '';
@@ -621,16 +612,16 @@ function renderSent(){
   const lbl=document.getElementById('tSentLbl'); if(lbl) lbl.textContent=learnMode?'학습됨':'보냄';
   const t=document.getElementById('tSent');
   if(!learnMode){
-    const sent=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&d.status==='sent');
+    const sent=Object.entries(drafts||{}).filter(([k,d])=>d&&d.status==='sent');
     if(t) t.textContent=sent.length||'—';
     if(!sent.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
     sent.sort(waitCmpDesc); list.innerHTML=sent.map(([k,d])=>sentSimple(k,d)).join(''); return;
   }
-  const saved=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&isSavedView(k,d));
+  const saved=Object.entries(drafts||{}).filter(([k,d])=>d&&isSavedView(k,d));
   if(t) t.textContent=saved.length||'—';
   if(!saved.length){ list.innerHTML='<div class="empty"><div class="big">저장된 학습 답변 없음</div>승인·저장된 답변이 여기 쌓입니다.</div>'; return; }
   // 그룹 맥락 = 저장분이 있는 예약의 비-dismissed 대화 전체
-  const convo=Object.keys(drafts||{}).map(k=>[k,drafts[k]]).filter(([k,d])=>d&&(d.status||'pending')!=='dismissed'&&d.status!=='sent');
+  const convo=Object.entries(drafts||{}).filter(([k,d])=>d&&(d.status||'pending')!=='dismissed'&&d.status!=='sent');
   const savedKeys={}; saved.forEach(([k,d])=>{ savedKeys[groupKey(d)||('m'+k)]=true; });
   const groups=buildGroups(convo).filter(g=>savedKeys[g.key]);
   groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1]));
@@ -697,7 +688,7 @@ function taskCmp(a,b){ const sa=TASK_ORDER[a[1].status]??9, sb=TASK_ORDER[b[1].s
   return String(a[1].room||'').localeCompare(String(b[1].room||'')); }
 function renderTasks(){
   const list=document.getElementById('taskList'), empty=document.getElementById('emptyTask'); if(!list) return;
-  const entries=Object.keys(tasks||{}).map(k=>[k,tasks[k]]).filter(([k,t])=>t && t.status!=='rejected');
+  const entries=Object.entries(tasks||{}).filter(([k,t])=>t && t.status!=='rejected');
   const actionable=entries.filter(([k,t])=>t.status==='proposed'||t.status==='active').length;
   const nT=document.getElementById('nTask'); if(nT) nT.textContent=actionable;
   const tT=document.getElementById('tTask'); if(tT) tT.textContent=actionable;
@@ -738,7 +729,7 @@ function fmtEtaShort(eta){ const m=String(eta||'').match(/^(\d{1,2}):(\d{2})/); 
   const h24=+m[1], mm=+m[2], ap=h24<12?'am':'pm', h=(h24%12)||12; return h+(mm?':'+String(mm).padStart(2,'0'):'')+ap; }
 function renderSugg(){
   const listEl=document.getElementById('suggList'); if(!listEl) return;
-  const entries=Object.keys(suggestions||{}).map(k=>[k,suggestions[k]]).filter(([k,s])=>!!s)
+  const entries=Object.entries(suggestions||{}).filter(([k,s])=>!!s)
     .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
   const pend=entries.filter(([k,s])=>s.status==='pending');
   const done=entries.filter(([k,s])=>s.status!=='pending').slice(0,8); // 최근 처리분 몇 개만
@@ -796,7 +787,7 @@ function rejectSugg(id){
 // ── 후기 탭 (2026-07-14 B1-6): cs/reviewQueue — 체크아웃 익일 긍정 게스트 자동 선별 → 승인 시 초안 생성 ──
 function renderReview(){
   const el=document.getElementById('reviewList'); if(!el)return;
-  const entries=Object.keys(reviewQueue||{}).map(k=>[k,reviewQueue[k]]).filter(([k,q])=>!!q)
+  const entries=Object.entries(reviewQueue||{}).filter(([k,q])=>!!q)
     .sort((a,b)=>(Date.parse(b[1].createdAt||0)||0)-(Date.parse(a[1].createdAt||0)||0));
   const prop=entries.filter(([k,q])=>q.status==='proposed');
   const nEl=document.getElementById('tReview'); if(nEl)nEl.textContent=prop.length;
@@ -874,10 +865,9 @@ function approveDraft(id){
   // A안+2단계: 확정 답변만 사용(편집창 열린 채면 현재값 자동확정 → [저장] 안 눌러도 편집 유실 없음).
   //   AI 초안이 편집본을 덮는 경로 제거: committedEdit/현재 편집값이 있으면 그것, 없으면(편집 안 함) AI 초안.
   const aiBase=editSourceText(d);
-  let final;
-  if(editingIds.has(id)&&edits[id]!=null) final=edits[id];
-  else if(committedEdit[id]!=null) final=committedEdit[id];
-  else final=aiBase;
+  const final = (editingIds.has(id)&&edits[id]!=null) ? edits[id]
+    : (committedEdit[id]!=null) ? committedEdit[id]
+    : aiBase;
   const edited=final.trim()!==aiBase.trim();
   const score=(selfScores[id]!=null&&selfScores[id]>0)?selfScores[id]:null; // 말투 자기평가(미평가=null)
   update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:editSourceLang(d),editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
