@@ -1004,8 +1004,9 @@ var CLARA_SYSTEM =
   '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
   '[답변 필요도] replyNeeded: 이 메시지에 답장이 필요한지 판단하세요. 반드시 이전 대화 맥락을 함께 고려합니다 — 우리가 이미 답한 내용에 대한 단순 감사·확인·수신 알림("thanks","ok","알겠습니다", 자동 통지성 정보 등)이라 답을 안 보내도 자연스러우면 false, 질문·요청이 있거나 첫 인사라 답이 예의상 필요하면 true. false일 때 replyNote에 이유를 한국어 한 줄로(예: "안내 확인 감사 인사 — 답 없어도 자연스러움").\n' +
   '[게스트 감정] sentiment: 이 게스트의 현재 감정·태도를 "positive"(만족·호의적), "neutral", "negative"(불만·불편) 중 하나로.\n' +
+  '[도착시간(ETA) 감지] 게스트가 자기 도착 예정 시각을 대화체로 알려온 경우에만(예: "6시쯤 도착해요", "I\'ll arrive around 6pm", "비행기가 5시에 내려요 그리고 바로 갈게요") etaTime에 24시간 "HH:MM"으로(대략적 표현은 가까운 정시로, 비행기 착륙 시각만 말했으면 착륙 시각 그대로), etaQuote에 근거가 된 게스트 문장을 원문 그대로 담으세요. 다음은 ETA가 아님 — etaTime을 null로: 체크인 규정 질문("체크인 몇 시부터죠?"), 체크아웃·퇴실 시각, 우리가 안내한 시각, "저녁에요"처럼 시각 특정 불가한 표현.\n' +
   '응답은 반드시 JSON 하나로만 출력: ' +
-  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자, "tasks": [{"text": 한국어 할 일, "dueHint": 시점힌트}], "replyNeeded": true/false, "replyNote": 한국어 한 줄(replyNeeded가 false일 때만), "sentiment": "positive"/"neutral"/"negative"}. ' +
+  '{"reply": 게스트 언어 답변, "replyKo": 한국어 대역, "category": 짧은 분류(한국어), "confidence": 0~1 숫자, "tasks": [{"text": 한국어 할 일, "dueHint": 시점힌트}], "replyNeeded": true/false, "replyNote": 한국어 한 줄(replyNeeded가 false일 때만), "sentiment": "positive"/"neutral"/"negative", "etaTime": "HH:MM" 또는 null, "etaQuote": 근거 문장 또는 null}. ' +
   'JSON 외 다른 텍스트를 출력하지 마세요.';
 
 // ---- (2) 초안 생성 파이프라인: 신규 inbox → cs/drafts ----
@@ -1271,6 +1272,18 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   fbSet('cs/drafts/' + msgId, rec);
   updateGuestScore_(inbox, d.sentiment, sirvoy); // 후기 선별용 감정·소통 지표 누적(cs/guestScore)
 
+  // 대화체 ETA → 제안 탭 (B3 후속 2026-07-15): 정형(notice-eta)과 동일 경로 재사용 —
+  // 승인 시 applySuggestions_ 가 HK 반영(취소예약 가드 포함). 초안당 1회(drafts 멱등 가드 승계).
+  if (d.etaTime) {
+    fbSet('cs/suggestions/' + msgId, {
+      type: 'eta', status: 'pending', eta: d.etaTime, evidence: d.etaQuote || '',
+      origin: 'chat', sourceMsgId: msgId, guest: rec.guest, bookingId: rec.bookingId,
+      sirvoyId: rec.sirvoyId, room: rec.room, checkinDate: rec.checkinDate,
+      checkoutDate: rec.checkoutDate, receivedAt: rec.receivedAt, createdAt: rec.createdAt
+    });
+    tgNotify_('[PWR CS] 제안: ' + (rec.guest || '게스트') + ' 대화체 ETA ' + d.etaTime + ' — 승인 대기');
+  }
+
   // (4) 업무 후보 저장 — 같은 초안 호출이 반환한 tasks[]를 cs/tasks 에 status='proposed'로 적재(추가 호출 없음).
   saveTaskCandidates_(msgId, d.tasks, rec);
 
@@ -1379,7 +1392,9 @@ function claudeDraft_(inbox, examples, history) {
     tasks: sanitizeTasks_(obj.tasks), // (4) 업무 후보 배열(없으면 [])
     replyNeeded: (obj.replyNeeded === false ? false : true), // 답변 필요도(기본 true — 미출력 시 안전)
     replyNote: String(obj.replyNote || '').slice(0, 120),    // 답불요 사유(한국어 한 줄)
-    sentiment: (['positive','neutral','negative'].indexOf(obj.sentiment) >= 0 ? obj.sentiment : 'neutral') // 후기 대상 선별용
+    sentiment: (['positive','neutral','negative'].indexOf(obj.sentiment) >= 0 ? obj.sentiment : 'neutral'), // 후기 대상 선별용
+    etaTime: (/^\d{1,2}:\d{2}$/.test(String(obj.etaTime || '')) ? obj.etaTime : null), // 대화체 ETA(형식 불일치·null → 무시)
+    etaQuote: String(obj.etaQuote || '').slice(0, 200)
   };
 }
 // 모델이 준 tasks[] 정제: 배열·객체·text 유효한 것만, 최대 5개.
