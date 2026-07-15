@@ -97,6 +97,29 @@
 
 ---
 
+## ✅ 실행 결과 (2026-07-15 오후 — 죽은 코드만 삭제, 리팩터링류는 보류)
+
+**방침**: "지워도 로직이 안 변하는 것"만 실행. 중복 하이스트(맵·포맷터·부킹해석 추출), 아이콘→이모지 등 리팩터링·시각 변경은 보류(아래 원판단 유지).
+
+| 레포 | 커밋 | diff | 배포 검증 |
+|------|------|------|-----------|
+| CS | eca8623 | -153/+20 (Code.gs·index.html) | Actions success, sha 일치 |
+| guide | 1ae4d00 | -7 (video-slot) | Actions success, sha 일치 |
+| HK | 39ea18d | -83/+11 (index·manual·Code.gs) | push+HEAD==origin+raw 반영 (클래식 Pages) |
+
+**합계 실삭제: 약 -212줄.** 검증: CS 테스트 러너 17/17 PASS, 모든 JS `node --check` 통과, 삭제 심볼 전부 grep 0건 확인.
+
+**실행 중 기각/보류된 findings:**
+- `doGet`(CS) — doPost와 반환값('ok(get)' vs 'ok')·에러로깅이 달라 축약 안 함. 리뷰 오탐.
+- `#auto-badge` 요소(HK) — `selStatus`에 가드 없는 참조 생존 → 요소 지우면 방 상태 클릭이 TypeError. no-op 함수만 삭제, 요소는 유지. 완전 제거하려면 selStatus 줄 정리가 선행(행동 변경이라 이번 패스 제외).
+- `fbDelete`(CS) — CLAUDE.md §6b 4함수 미러 규정상 의도된 스텁. 유지.
+
+**➕ 보너스 버그 수정 (리뷰 스코프 밖에서 발견)**: CS `gmailAllowed_` — 발송 루프(L265)가 호출하는데 정의가 없었음. 7월 학습모드 가드 덕에 미발현, **8월 학습모드 해제 즉시 승인 초안 발송 루프 전체가 ReferenceError로 사망할 지뢰**. 부작용 없는 예산 peek(기존 `budgetAllows_`+`gmailUsedKey_` 재사용, 카운트 누적 없음 — 실카운트는 `budgetGate_('reply')` 담당)로 정의해 해소. 같은 커밋(eca8623)에 포함.
+
+**클라라 액션 — GAS 복붙 2건** (둘 다 배포까지 하세요):
+- CS: https://raw.githubusercontent.com/pwr-clair/cs/main/gas/Code.gs → PWR-CS-Engine
+- HK: https://raw.githubusercontent.com/pwr-clair/housekeeping/main/gas/Code.gs → PWR-HK-Engine
+
 ## 판단 (ponytail 관점)
 
 - **가장 실익:** HK index.html의 죽은 CSS/i18n/핸들러 정리(-260 중 절반 이상이 확실한 삭제). 로직 변화 0이라 안전.
