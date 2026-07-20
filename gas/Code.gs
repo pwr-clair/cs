@@ -200,11 +200,14 @@ function budgetSnapshot_(usedStr, budgetStr, date, fetchUsedStr) { // 순수(테
   return { used: parseInt(usedStr || '0', 10), budget: parseInt(budgetStr || '150', 10), date: date,
            fetchUsed: parseInt(fetchUsedStr || '0', 10) }; // urlfetch 일일 사용량(계측만)
 }
-function mirrorBudget_() {
+function mirrorBudget_(scanned) {
   var p = PropertiesService.getScriptProperties();
   var date = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   var snap = budgetSnapshot_(p.getProperty('CS_GMAIL_USED_' + date), p.getProperty('CS_GMAIL_BUDGET'), date,
                              p.getProperty(fetchUsedKey_()));
+  // 하트비트(07-15 승인, 07-20 탑재): 기존 fbSet 1회에 필드만 얹음 — 추가 urlfetch 0, 아이들 run 미접촉.
+  snap.hbAt = new Date().toISOString();
+  if (scanned != null) snap.hbScanned = scanned;
   try { fbSet('cs/meta/gmailBudget', snap); } catch (e) { Logger.log('budget mirror 실패: ' + e); }
 }
 
@@ -600,7 +603,7 @@ function pollCsInbox() {
     // 발송 워커: approved → 원 스레드 reply + 학습 (예산 가드). 발송 실패가 위 단계를 막지 않음.
     try { sendApprovedDrafts(); } catch (e) { Logger.log('발송 워커 실패: ' + e); }
   }
-  mirrorBudget_(); // run 종료 시 예산 사용량 미러링 (fetchUsed 포함)
+  mirrorBudget_(pendingThreads.length); // run 종료 시 예산 사용량 미러링 (fetchUsed·하트비트 포함)
   Logger.log('이번 run fetch: ' + _fetchRunCount + '회'); // urlfetch 소비 패턴 분석용
 }
 
