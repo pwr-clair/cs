@@ -292,7 +292,7 @@ button{font-family:inherit;}
   </div>
   <div class="pane" id="p3">
     <div id="reviewList"></div>
-    <div class="empty" id="emptyReview" style="display:none;"><div class="big">후기 후보 없음</div>어제 체크아웃한 게스트 중 감정 긍정+소통 원활한 분이 매일 아침 자동 선별돼 올라옵니다. 승인하면 후기 요청 초안이 대기 탭에 생성돼요.</div>
+    <div class="empty" id="emptyReview" style="display:none;"><div class="big">후기 후보 없음</div>어제 체크아웃한 게스트 중 감정 긍정+소통 원활한 분이 매일 아침 자동 선별돼 올라옵니다. 여기서 승인하면 그대로 발송돼요(학습모드 중엔 발송 없음 — 8월 전환 후 재개). 결과는 보냄 탭에서.</div>
   </div>
   <div class="pane" id="p4"><div id="sentList"></div></div>
 
@@ -334,7 +334,7 @@ let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHoo
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let manualQueue={}; // cs/manualQueue (즉석 생성 요청 상태)
 let suggestions={}; // cs/suggestions (ETA 등 HK 반영 — 2026-07-20부터 자동 승인 적재, GAS 워커가 5분 내 반영. 탭=이력)
-let reviewQueue={}; // cs/reviewQueue (후기 요청 후보 — 승인 시 GAS가 요청 초안 생성→대기 탭)
+let reviewQueue={}; // cs/reviewQueue (후기 요청 후보 — 승인=최종, GAS가 초안 생성 후 바로 발송. 대기 탭 미경유 2026-07-20)
 let edits={}, editingIds=new Set(); // 인라인 수정 버퍼(편집창 열림 동안)
 let committedEdit={}; // [저장]으로 확정한 편집본(승인이 이 값만 사용 → AI 초안 덮임 원천 차단)
 let selfScores={}; // 말투 일치 자기평가(카드별 1~5, 0/미설정=빈칸) — 승인 시 draft.claraToneScore로 기록
@@ -560,7 +560,8 @@ function renderWait(){
   const bulkBar=document.getElementById('bulkBar');
   // 타임라인 대상 = dismissed·sent 제외한 모든 대화 메시지(답한 것 포함해 맥락으로 표시)
   const convo=Object.entries(drafts||{})
-    .filter(([k,d])=> d && (d.status||'pending')!=='dismissed' && d.status!=='sent');
+    .filter(([k,d])=> d && (d.status||'pending')!=='dismissed' && d.status!=='sent'
+      && !(d.origin==='review' && d.status!=='error')); // 후기요청은 대기 미표시(2026-07-20) — 발송 실패만 노출, 성공은 보냄 탭
   // 대기 카운터 = 조작 필요 '건'(메시지 단위, dismissed 제외)
   const actionableEntries=convo.filter(([k,d])=>isActionable_(k,d));
   document.getElementById('nWait').textContent=actionableEntries.length;
@@ -807,7 +808,7 @@ function renderReview(){
     else if(q.status==='skipped') state='<span class="status">건너뜀</span>';
     const btns=q.status==='proposed'
       ?'<div class="btns"><button class="b skip" onclick="skipReview(\''+k+'\')">건너뜀</button>'+
-       '<button class="b go" onclick="approveReview(\''+k+'\')">후기 요청 초안 만들기</button></div>':'';
+       '<button class="b go" onclick="approveReview(\''+k+'\')">승인 · 후기 요청 발송</button></div>':'';
     return '<div class="card">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px;">'+
         '<b style="font-size:13px;">⭐ '+esc(q.guest||'게스트')+'</b>'+state+'</div>'+
@@ -819,7 +820,7 @@ function approveReview(k){
   const q=reviewQueue[k];
   if(!q||q.status!=='proposed'){ toast('이미 처리된 후보입니다'); return; }
   update(ref(db,'cs/reviewQueue/'+k),{status:'approved',approvedAt:new Date().toISOString()})
-    .then(()=>toast('승인 — 5분 내 후기 요청 초안이 대기 탭에 올라옵니다')).catch(e=>toast('실패: 쓰기 권한'));
+    .then(()=>toast(learnMode?'승인 — 8월 실발송 전환 후 자동 발송됩니다':'승인 — 5분 내 후기 요청이 발송됩니다')).catch(e=>toast('실패: 쓰기 권한'));
 }
 function skipReview(k){
   const q=reviewQueue[k];

@@ -1157,8 +1157,9 @@ function updateGuestScore_(inbox, sentiment, sirvoy) {
 
 // ── 후기 탭 (2026-07-14 B1-6, §3: 감성 긍정+소통 원활 게스트만·체크아웃 익일) ──────────
 // ①선별(하루 1회): 어제 체크아웃 + 긍정(negCount 0·posCount≥1) + 대화 있음 → cs/reviewQueue proposed
-// ②초안(5분 슬롯): 후기 탭에서 승인된 건 → Claude 1회로 후기 요청 초안 → cs/drafts(대기 탭에서 최종 승인)
-//   7월 학습모드에선 발송 없음(저장만) — 실전 발송은 8월 전환 후. 발송 경로는 기존 워커 재사용.
+// ②초안(5분 슬롯): 후기 탭에서 승인된 건 → Claude 1회로 후기 요청 초안 → cs/drafts에 곧장 approved 적재
+//   (2026-07-20 클라라: 대기 탭 2차 승인 제거 — 후기 탭 승인 = 최종 승인, 발송 워커가 바로 발송.
+//    대기 탭에는 표시 안 함(에러 시에만 노출), 발송되면 보냄 탭에서 확인. 발송 경로는 기존 워커 재사용.)
 function reviewQueueWorker_() {
   var p = PropertiesService.getScriptProperties();
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
@@ -1202,7 +1203,8 @@ function reviewDraftWorker_() {
       var draftId = 'review_' + key;
       fbSet('cs/drafts/' + draftId, {
         reply: d.reply, replyKo: d.replyKo, category: '후기요청', confidence: d.confidence,
-        status: 'pending', editedReply: null, lang: q.lang || 'en', guest: q.guest || null,
+        status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(), // 후기 탭 승인 = 최종 승인
+        editedReply: null, lang: q.lang || 'en', guest: q.guest || null,
         bookingId: q.bookingId || null, channel: q.channel || null, origin: 'review',
         threadId: q.threadId || null, emailReply: !!q.threadId, room: q.room || null,
         origMsg: '(후기 요청 — ' + (q.guest || '게스트') + ', ' + (q.checkoutDate || '') + ' 체크아웃)',
