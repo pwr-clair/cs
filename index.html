@@ -491,7 +491,10 @@ function answerBody(id,d){
   if(st==='pending'){
     actions='<div class="btns">'+
       '<button class="b'+(editing?' go':'')+'" onclick="editOrSave(\''+id+'\')">'+(editing?'저장':'수정')+'</button>'+
-      (editing?'':'<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="'+(d.noReplySuggested?'답 없이 치우기 (삭제 아님·데이터 보존)':'이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)')+'">'+(d.noReplySuggested?'답불요 · 치우기':'지난 문의')+'</button>')+
+      (editing?'':(d.noReplySuggested
+        ? '<button class="b skip" onclick="dismissDraft(\''+id+'\',\'no-reply\')" title="답 없이 치우기 (삭제 아님·데이터 보존)">답불요 · 치우기</button>'
+        : '<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>'+
+          '<button class="b skip" onclick="dismissDraft(\''+id+'\',\'no-reply\')" title="답 없이 치우기 — 추천이 없어도 클라라 판단으로 답불요 처리 (삭제 아님·데이터 보존)">답불요</button>'))+
       '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인':'승인 · 발송')+'</button>'+
     '</div>';
   } else if(saveFailed){
@@ -897,12 +900,15 @@ function retryDraft(id){
   update(ref(db,'cs/drafts/'+id),{status:'approved',errorMsg:null,approvedAt:new Date().toISOString()})
     .then(()=>toast('재시도 — 발송 대기')).catch(e=>toast('재시도 실패: 권한 확인'));
 }
-// 지난 문의 치우기(원탭) — status:dismissed. 삭제 아님(데이터 보존). 발송 워커·학습 루프는 status!=='approved'/'sent'이라 자연 제외.
-function dismissDraft(id){
+// 치우기(원탭) — status:dismissed. 삭제 아님(데이터 보존). 발송 워커·학습 루프는 status!=='approved'/'sent'이라 자연 제외.
+// reason: 'no-reply'(답불요 — 클라라 판단) / 기본 'handled'(이미 처리된 지난 문의).
+// dismissReason 저장 → 추천 없이 답불요 처리된 건 = 답불요 감지 누락 신호(추후 감지 개선 근거).
+function dismissDraft(id,reason){
   const d=drafts[id];
   if(!d || ((d.status||'pending')!=='pending' && d.status!=='notice')){ toast('대기 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림 카드는 치우기 허용)
-  update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; toast('지난 문의로 치움'); })
+  const noReply=(reason==='no-reply');
+  update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissReason:noReply?'no-reply':'handled',dismissedAt:new Date().toISOString()})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(noReply?'답불요로 치움':'지난 문의로 치움'); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
 }
 // (D) 질문 분류 자산화: 대상 draft들을 category별로 그룹핑 → {category, count, representatives[]}.
