@@ -5,8 +5,9 @@
 > 구현하지 말고 질문으로 회신할 것 (지난주 HK에서 즉석 A/B 재설계로 크게 꼬인 전례 있음).
 
 ## ⚡ 열쇠 프로토콜 (2026-07-12 — 최우선, 시스템 전역 정본 = pwr-clair/pwr-docs/PWR_MASTER.md)
-- 클라라가 **`0917`** 입력 → **시작 리추얼**: ①pwr-clair/pwr-docs를 스크래치패드에 clone(최신) ②Notion 미러(PWR_MASTER, page 397b9d1f-a416-81f8-8e12-eeccfdefc21b) 헤더 "최종 갱신" 날짜와 레포 헤더를 비교, **더 최신인 쪽을 정본으로 양쪽 동기화**(역동기화 포함) ③PWR_MASTER 기준 현재 상태·다음 액션(B1)·오늘 아젠다를 짧게 브리핑하고 대기.
-- 클라라가 **"오늘은 여기까지"** 입력 → **마감 리추얼 한 세트**: ①PWR_MASTER Part B 제자리 갱신(헤더 최종 갱신 시각 필수) ②status-board.html **DATA 블록** 갱신(완료 todo 삭제, meta.updated) ③`~/Documents/status-board.html` 복사 ④pwr-docs 커밋·푸시 + **HEAD==origin 확인** ⑤Notion 미러 동기화 ⑥완료 보고(증거 포함).
+- 클라라가 **`0917`** 입력 → **시작 리추얼**: ①pwr-clair/pwr-docs를 스크래치패드에 clone(최신) ②Notion 미러(PWR_MASTER, page 397b9d1f-a416-81f8-8e12-eeccfdefc21b) 헤더 "최종 갱신" 날짜와 레포 헤더를 비교, **Notion이 더 최신이면(챗 마감 흔적) 레포로 역동기화**, 레포가 최신이면 미러는 그대로 둠(레포→Notion은 「노션 싱크」 온디맨드 — 2026-07-20 중간안) ③PWR_MASTER 기준 현재 상태·다음 액션(B1)·오늘 아젠다를 짧게 브리핑하고 대기.
+- 클라라가 **"오늘은 여기까지"** 입력 → **마감 리추얼 한 세트**: ①PWR_MASTER Part B 제자리 갱신(헤더 최종 갱신 시각 필수) ②status-board.html **DATA 블록** 갱신(완료 todo 삭제, meta.updated) ③`~/Documents/status-board.html` 복사 ④pwr-docs 커밋·푸시 + **HEAD==origin 확인** ⑤완료 보고(증거 포함). Notion 동기화는 마감에서 제외(2026-07-20).
+- 클라라가 **"노션 싱크"** 입력 → PWR_MASTER 최신본(레포)을 Notion 미러에 전체 교체로 밀어넣고 헤더 재조회 검증(챗 창에서 마스터 읽기 전 한 마디).
 - 이 프로토콜은 이 문서의 다른 내용보다 우선한다. 아래 본문은 CS 프로젝트 인수인계(2026-07-04 기준)로, 최신 상태와 어긋나면 PWR_MASTER가 정본.
 
 ## 0. 첫 액션 (순서대로)
