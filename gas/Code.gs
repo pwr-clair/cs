@@ -340,17 +340,20 @@ function ensureSelfScoreHeader_(sheet) {
 //   발송본: 게스트 언어==편집 언어면 그대로 / 미편집이면 Claude 원문(reply, 이미 게스트 언어) /
 //           편집됐고 언어 다르면 LanguageApp 번역. 타깃 코드 불명(guessLang_의 'eu' 등)이면 원문 폴백.
 function langToIso_(l) { return /^(en|ko|ja|zh|ru|th)$/.test(String(l||'').toLowerCase()) ? String(l).toLowerCase() : null; }
+// 단축 치환(2026-07-20 클라라): 편집본/초안의 {가이드}·{guide} → 가이드 URL. 번역 전·후 모두 통과하도록
+// resolveGuestFinal_ 의 모든 출구에서 적용(번역기가 {가이드}→{Guide}로 바꿔도 잡힘).
+function subShortcuts_(s) { return String(s == null ? '' : s).replace(/\{\s*(가이드|guide)\s*\}/gi, 'https://pwr-guide.online'); }
 function resolveGuestFinal_(d) {
   var editLang = d.claraFinalLang || (String(d.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
-  var claraFinal = String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '');
+  var claraFinal = subShortcuts_(String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '')); // 번역 전 치환
   var guestLang = String(d.lang || 'en').toLowerCase();
   if (guestLang === editLang) return claraFinal;          // ko게스트+ko편집 / en게스트+en편집 → 그대로
-  if (!d.editedByClara) return d.reply || claraFinal;      // 미편집 → Claude 원문(이미 게스트 언어, 번역 불필요)
+  if (!d.editedByClara) return subShortcuts_(d.reply || claraFinal); // 미편집 → Claude 원문(이미 게스트 언어, 번역 불필요)
   var iso = langToIso_(guestLang);
   var target = iso || 'en';                                // (4) 타깃 코드 불명(eu 등) → 영어로 발송(원문 폴백 아님)
   if (target === editLang) return claraFinal;              // 영어권+영어편집 등
-  try { return LanguageApp.translate(claraFinal, editLang, target); } // 무료 번역(불명이면 en)
-  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + target + '): ' + e); return d.reply || claraFinal; }
+  try { return subShortcuts_(LanguageApp.translate(claraFinal, editLang, target)); } // 무료 번역(불명이면 en) — 번역 후 재치환
+  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + target + '): ' + e); return subShortcuts_(d.reply || claraFinal); }
 }
 
 function saveApprovedToSheet_() {
@@ -1182,6 +1185,8 @@ function reviewQueueWorker_() {
   if (made) Logger.log('후기 후보 선별: ' + made + '건 (체크아웃 ' + yesterday + ')');
 }
 function reviewDraftWorker_() {
+  if (learnModeOn_()) return; // 학습모드(발송 없음)엔 후기요청 초안 미생성 — 대기 탭 소음 방지(2026-07-20 클라라).
+                              // 승인된 후보는 reviewQueue에 남아 8월 실발송 전환 시 자동으로 초안 생성 재개.
   var queue = fbGet('cs/reviewQueue'); if (!queue) return;
   for (var key in queue) {
     var q = queue[key];

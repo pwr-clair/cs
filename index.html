@@ -506,7 +506,7 @@ function answerBody(id,d){
   } else {
     actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — 학습 시트에 저장 중(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
   }
-  const editLangLbl=(editSourceLang(d)==='ko')?'한국어로 편집 — 저장 시 게스트 언어로 자동 번역':'한국어 또는 영어로 편집 — 한국어로 쓰면 발송 시 자동 영번역';
+  const editLangLbl=((editSourceLang(d)==='ko')?'한국어로 편집 — 저장 시 게스트 언어로 자동 번역':'한국어 또는 영어로 편집 — 한국어로 쓰면 발송 시 자동 영번역')+' · {가이드} = 가이드 링크 자동 치환';
   const editArea=(st==='pending'&&editing)
     ? '<div class="edit-hint">'+editLangLbl+'</div><textarea class="editbox" oninput="editInput(\''+id+'\',this.value)">'+esc(editVal)+'</textarea>' : '';
 
