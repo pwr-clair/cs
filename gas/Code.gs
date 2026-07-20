@@ -1030,9 +1030,11 @@ function processInboxToDrafts() {
         lang: rec.lang || 'en', receivedAt: rec.receivedAt || null, createdAt: new Date().toISOString()
       };
       if (rec.eta) {
-        // ETA 요청 알림 → 대기 카드 대신 '제안'으로 (2026-07-14 클라라 지시: 확인·치우기 대상이 아님)
+        // ETA 요청 알림 → 자동 승인 제안 (2026-07-20 클라라: 이중 승인 제거 — 제안 탭 대기 없이
+        // applySuggestions_가 5분 내 HK 반영. 취소예약 가드는 반영 시점에 그대로 작동)
         fbSet('cs/suggestions/' + id, {
-          type: 'eta', status: 'pending', eta: rec.eta, evidence: rec.etaEvidence || '',
+          type: 'eta', status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(),
+          eta: rec.eta, evidence: rec.etaEvidence || '',
           sourceMsgId: id, guest: base.guest, bookingId: base.bookingId, sirvoyId: base.sirvoyId,
           room: base.room, checkinDate: base.checkinDate, checkoutDate: base.checkoutDate,
           receivedAt: base.receivedAt, createdAt: base.createdAt
@@ -1272,16 +1274,17 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   fbSet('cs/drafts/' + msgId, rec);
   updateGuestScore_(inbox, d.sentiment, sirvoy); // 후기 선별용 감정·소통 지표 누적(cs/guestScore)
 
-  // 대화체 ETA → 제안 탭 (B3 후속 2026-07-15): 정형(notice-eta)과 동일 경로 재사용 —
-  // 승인 시 applySuggestions_ 가 HK 반영(취소예약 가드 포함). 초안당 1회(drafts 멱등 가드 승계).
+  // 대화체 ETA → 자동 승인 제안 (B3 후속 2026-07-15 / 2026-07-20 이중 승인 제거): 정형(notice-eta)과
+  // 동일 경로 재사용 — applySuggestions_ 가 5분 내 HK 반영(취소예약 가드 포함). 초안당 1회(drafts 멱등 가드 승계).
   if (d.etaTime) {
     fbSet('cs/suggestions/' + msgId, {
-      type: 'eta', status: 'pending', eta: d.etaTime, evidence: d.etaQuote || '',
+      type: 'eta', status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(),
+      eta: d.etaTime, evidence: d.etaQuote || '',
       origin: 'chat', sourceMsgId: msgId, guest: rec.guest, bookingId: rec.bookingId,
       sirvoyId: rec.sirvoyId, room: rec.room, checkinDate: rec.checkinDate,
       checkoutDate: rec.checkoutDate, receivedAt: rec.receivedAt, createdAt: rec.createdAt
     });
-    tgNotify_('[PWR CS] 제안: ' + (rec.guest || '게스트') + ' 대화체 ETA ' + d.etaTime + ' — 승인 대기');
+    tgNotify_('[PWR CS] ' + (rec.guest || '게스트') + ' 대화체 ETA ' + d.etaTime + ' — 5분 내 HK 자동 반영');
   }
 
   // (4) 업무 후보 저장 — 같은 초안 호출이 반환한 tasks[]를 cs/tasks 에 status='proposed'로 적재(추가 호출 없음).
@@ -1473,11 +1476,11 @@ function applySuggestions_() {
       for (var rm in roomsAll) {
         var r = roomsAll[rm]; if (!r) continue;
         var changed = false;
-        if (r.currentBooking && String(r.currentBooking.bookingId) === String(pendRec.bookingId) && r.currentBooking.checkinTime !== ci) { r.currentBooking.checkinTime = ci; changed = true; }
+        if (r.currentBooking && String(r.currentBooking.bookingId) === String(pendRec.bookingId) && r.currentBooking.checkinTime !== ci) { r.currentBooking.checkinTime = ci; r.currentBooking.etaFromCs = true; changed = true; } // etaFromCs: HK 빨간 점 마커(2026-07-20)
         if (Array.isArray(r.nextBookings)) {
           for (var i2 = 0; i2 < r.nextBookings.length; i2++) {
             var nb = r.nextBookings[i2];
-            if (nb && String(nb.bookingId) === String(pendRec.bookingId) && nb.checkinTime !== ci) { nb.checkinTime = ci; changed = true; }
+            if (nb && String(nb.bookingId) === String(pendRec.bookingId) && nb.checkinTime !== ci) { nb.checkinTime = ci; nb.etaFromCs = true; changed = true; }
           }
         }
         if (changed) fbSet('app/rooms/' + rm, r);
