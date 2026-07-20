@@ -473,7 +473,7 @@ function answerBody(id,d){
   // 답불요 추천 배지 (7월: 표시만, 자동처리 없음 — 판단은 클라라. 초안 호출이 대화 맥락 보고 산출)
   const noReplyBadge=(d.noReplySuggested)?'<span class="cat" style="background:#FAEEDA;color:#854F0B;">💤 답불요 추천</span>':'';
   const noReplyNote=(st==='pending'&&d.noReplySuggested&&d.noReplyNote)
-    ?'<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:6px;padding:5px 8px;margin-top:6px;">💤 답불요 추천 — '+esc(d.noReplyNote)+' (표시만 — 보낼지는 클라라 판단)</div>':'';
+    ?'<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:6px;padding:5px 8px;margin-top:6px;">💤 답불요 추천 — '+esc(d.noReplyNote)+' (동의하면 [답불요 · 치우기], 아니면 승인·발송)</div>':'';
   const editing=editingIds.has(id);
   const editVal=(edits[id]!=null)?edits[id]:editSourceText(d); // 편집창 = 한국어(비영어) / 영어(영어권)
   const saveFailed=(learnMode && st==='approved' && d.saveError);
@@ -490,7 +490,7 @@ function answerBody(id,d){
   if(st==='pending'){
     actions='<div class="btns">'+
       '<button class="b'+(editing?' go':'')+'" onclick="editOrSave(\''+id+'\')">'+(editing?'저장':'수정')+'</button>'+
-      (editing?'':'<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)">지난 문의</button>')+
+      (editing?'':'<button class="b skip" onclick="dismissDraft(\''+id+'\')" title="'+(d.noReplySuggested?'답 없이 치우기 (삭제 아님·데이터 보존)':'이미 처리된 지난 문의로 치우기 (삭제 아님·데이터 보존)')+'">'+(d.noReplySuggested?'답불요 · 치우기':'지난 문의')+'</button>')+
       '<button class="b go" onclick="approveDraft(\''+id+'\')">'+(learnMode?'승인':'승인 · 발송')+'</button>'+
     '</div>';
   } else if(saveFailed){
