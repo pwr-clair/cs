@@ -473,6 +473,10 @@ function answerBody(id,d){
   const cat=d.category?'<span class="cat">'+esc(d.category)+'</span>':'';
   // 답불요 추천 배지 (7월: 표시만, 자동처리 없음 — 판단은 클라라. 초안 호출이 대화 맥락 보고 산출)
   const noReplyBadge=(d.noReplySuggested)?'<span class="cat" style="background:#FAEEDA;color:#854F0B;">💤 답불요 추천</span>':'';
+  // 금칙 셀프체크 플래그(#3, 2026-07-25): 엔진이 룰 기반으로 잡은 위험 문구 — 차단 아님, 수정·판단은 클라라
+  const guardBadge=(d.guardFlags&&d.guardFlags.length)?'<span class="cat" style="background:#FDE2E2;color:#9B1C1C;">⚠️ 문구 주의</span>':'';
+  const guardNote=(st==='pending'&&d.guardFlags&&d.guardFlags.length)
+    ?'<div style="font-size:11px;color:#9B1C1C;background:#FDE2E2;border-radius:6px;padding:5px 8px;margin-top:6px;">⚠️ '+d.guardFlags.map(esc).join(' · ')+' — 초안을 확인·수정 후 승인하세요</div>':'';
   const noReplyNote=(st==='pending'&&d.noReplySuggested&&d.noReplyNote)
     ?'<div style="font-size:11px;color:#854F0B;background:#FAEEDA;border-radius:6px;padding:5px 8px;margin-top:6px;">💤 답불요 추천 — '+esc(d.noReplyNote)+' (동의하면 [답불요 · 치우기], 아니면 승인·발송)</div>':'';
   const editing=editingIds.has(id);
@@ -520,9 +524,9 @@ function answerBody(id,d){
         (imgs.length?thumbsHtml(imgs):'')+'</div>';
 
   return '<div class="ans">'+
-    '<div class="ans-top"><div class="who">답할 문의</div>'+cat+noReplyBadge+right+'</div>'+
+    '<div class="ans-top"><div class="who">답할 문의</div>'+cat+noReplyBadge+guardBadge+right+'</div>'+
     '<div class="msg"><div class="who">GUEST 원문</div><div class="body">'+esc(d.origMsg||'—')+'</div></div>'+
-    noReplyNote+
+    noReplyNote+guardNote+
     draftBlock+
     editArea+
     (st==='pending'?toneScoreRow(id):'')+

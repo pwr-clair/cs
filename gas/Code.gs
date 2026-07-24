@@ -312,11 +312,12 @@ function learnFromSend_(id, d, finalReply) {
     if (learnTarget_(d.editedByClara) === 'learn') {
       fbSet('cs/learn/' + id, {
         before: d.reply || '', after: finalReply, orig: orig,
-        lang: lang, category: d.category || null, ts: new Date().toISOString()
+        lang: lang, category: d.category || null, stage: d.stayStage || null, ts: new Date().toISOString()
       });
     } else {
       fbSet('cs/corpus/' + id, {
-        '상황요약': orig, '최종답변': finalReply, lang: lang, category: d.category || null, origin: 'approved'
+        '상황요약': orig, '최종답변': finalReply, lang: lang, category: d.category || null,
+        stage: d.stayStage || null, origin: 'approved' // stage(#2): 동단계 예시 검색 가중용
       });
     }
   } catch (e) { Logger.log('learn 실패 ' + id + ': ' + e); }
@@ -1123,7 +1124,7 @@ function makeManualDraft_(rid, text) {
   var inboxLike = { parsed: { message: text }, lang: guessLang_(text), bookingId: null, guest: null,
                     source: 'manual', emailReply: false, receivedAt: new Date().toISOString(), raw: { body: text } };
   var examples = retrieveExamples_(inboxLike);
-  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null)); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
+  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null, null, null)); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
   var manualId = 'manual_' + rid;
   fbSet('cs/drafts/' + manualId, {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1258,12 +1259,16 @@ function retrieveThreadHistory_(msgId, cur, allInbox, allDrafts) {
 }
 
 function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
-  var examples = retrieveExamples_(inbox);
-  var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
-  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room, checkinDate, checkoutDate} 또는 null — Claude 호출 전에 조회해 [예약 상태] 블록에도 사용
+  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, svBid, room, checkinDate, checkoutDate} 또는 null — Claude 호출 전에 조회
   var ci = (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null;
   var co = (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null;
-  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co)); // 초안 호출 1회에 이력·태스크·예약상태 통합
+  var stage = stayStage_(todayKst_(), ci, co);            // (#2) 예약 단계 — 프롬프트·코퍼스 태그·검색 가중·금칙 체크 공용
+  var codeSent = checkinMailSent_(sirvoy, stage);         // (#4) HK 체크인 안내 발송 사실(읽기 전용)
+  var examples = retrieveExamples_(inbox, stage);         // (#2) 동단계 예시 가중
+  var corrections = retrieveCorrections_(inbox);          // (#1) 클라라 교정쌍 few-shot
+  var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
+  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co, stage, codeSent), corrections); // 초안 호출 1회에 전부 통합
+  var flags = guardFlags_(stage, codeSent, d.reply);      // (#3) 금칙 셀프체크(표시용, 차단 아님)
 
   var rec = {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1281,6 +1286,10 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
     checkinDate: ci,
     checkoutDate: co,
     hasHistory: !!history,                       // 맥락 참조 여부(DESK 표시·디버그용)
+    stayStage: stage,                            // (#2) 초안 생성 시점 예약 단계 — 학습 적재 시 코퍼스로 승계
+    checkinMailSent: codeSent,                   // (#4) HK 체크인 안내 발송 여부(true/false/null=미확인)
+    guardFlags: flags.length ? flags : null,     // (#3) 금칙 위반 의심 — DESK ⚠️ 표시(차단 아님, 판단은 클라라)
+    correctionsUsed: corrections.length,         // (#1) 교정쌍 few-shot 사용 수(디버그)
     noReplySuggested: d.replyNeeded === false,   // 답불요 추천(7월 표시만, 자동처리 없음 — 2026-07-14 B1-5)
     noReplyNote: d.replyNeeded === false ? (d.replyNote || '') : null,
     sentiment: d.sentiment || 'neutral',         // 게스트 감정(후기 대상 선별 연료)
@@ -1308,7 +1317,7 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   // 텔레그램 푸시
   var first = (((inbox.parsed && inbox.parsed.message) || '').split('\n')[0] || '').trim();
   if (first.length > 40) first = first.slice(0, 40) + '…';
-  tgNotify_('[PWR CS] ' + (inbox.guest || '게스트') + ' (' + (rec.room || '미상') + ') ' + first + ' → 초안 대기');
+  tgNotify_('[PWR CS] ' + (flags.length ? '⚠️ ' : '') + (inbox.guest || '게스트') + ' (' + (rec.room || '미상') + ') ' + first + ' → 초안 대기' + (flags.length ? ' · 금칙 의심: ' + flags.join(', ') : ''));
 }
 
 // (4) tasks[] → cs/tasks/{msgId_tN} (status='proposed'). 방번호·예약·게스트는 우리 데이터로 보강.
@@ -1352,8 +1361,8 @@ function cleanupPendingBacklog() {
   return n;
 }
 
-// corpus 유사사례 검색: 같은 언어 우선 + 키워드 겹침 점수 상위 5건 (임베딩 아님 — M2a 범위)
-function retrieveExamples_(inbox) {
+// corpus 유사사례 검색: 같은 언어(+5) + 키워드 겹침 + 같은 예약 단계(+3, #2 — stage 태그는 신규 적재분부터) 상위 5건
+function retrieveExamples_(inbox, stage) {
   var corpus = fbGet('cs/corpus'); if (!corpus) return [];
   var lang = inbox.lang || 'en';
   var msg = (((inbox.parsed && inbox.parsed.message) || '')).toLowerCase();
@@ -1362,6 +1371,7 @@ function retrieveExamples_(inbox) {
   for (var k in corpus) {
     var c = corpus[k]; if (!c || !c['최종답변']) continue;
     var score = (c.lang === lang ? 5 : 0);
+    if (stage && c.stage === stage) score += 3;   // 동단계 우선 — 반대 단계(도착 전↔입실 후) 예시 혼입 완화
     var hay = (((c['상황요약'] || '') + ' ' + (c['최종답변'] || ''))).toLowerCase();
     for (var t = 0; t < toks.length; t++) if (hay.indexOf(toks[t]) >= 0) score++;
     arr.push({ c: c, score: score });
@@ -1371,38 +1381,103 @@ function retrieveExamples_(inbox) {
   return out;
 }
 
-// 예약 단계 판정(순수, 테스트용): today/ci/co 는 'yyyy-MM-dd' 문자열(사전순=시간순). 날짜 전무 → null.
+// (#1) cs/learn(초안→클라라 수정본 쌍) 유사사례 상위 2건 — "초안이 저지른 실수"를 few-shot으로 교정.
+//   채택 기준: 언어 일치(+5) + 키워드 겹침, 합계 6점 이상(언어만 같아선 미채택 — 관련성 요구).
+function retrieveCorrections_(inbox) {
+  var learn = fbGet('cs/learn'); if (!learn) return [];
+  var lang = inbox.lang || 'en';
+  var msg = (((inbox.parsed && inbox.parsed.message) || '')).toLowerCase();
+  var toks = msg.split(/\s+/).filter(function (w) { return w.length > 1; });
+  var arr = [];
+  for (var k in learn) {
+    var c = learn[k]; if (!c || !c.before || !c.after) continue;
+    if (String(c.before) === String(c.after)) continue; // 무의미 쌍 제외
+    var score = (c.lang === lang ? 5 : 0);
+    var hay = (((c.orig || '') + ' ' + (c.after || ''))).toLowerCase();
+    for (var t = 0; t < toks.length; t++) if (hay.indexOf(toks[t]) >= 0) score++;
+    if (score >= 6) arr.push({ c: c, score: score });
+  }
+  arr.sort(function (a, b) { return b.score - a.score; });
+  var out = []; for (var i = 0; i < arr.length && i < 2; i++) out.push(arr[i].c);
+  return out;
+}
+
+// 예약 단계 판정(순수, 테스트용): today/ci/co 는 'yyyy-MM-dd' 문자열(사전순=시간순).
+// 반환 코드: 'pre'(도착 전)|'checkin'(체크인 당일)|'stay'(숙박 중)|'checkout'(체크아웃일)|'post'(퇴실 후)|null(날짜 전무)
 function stayStage_(today, ci, co) {
   if (!ci && !co) return null;
-  if (co && today > co) return '체크아웃 후(이미 퇴실 — 도착·체크인 안내 금지)';
-  if (co && today === co) return '체크아웃일(11:00까지 퇴실)';
-  if (ci && today < ci) return '도착 전';
-  if (ci && today === ci) return '체크인 당일(15:00부터 입실)';
-  return '숙박 중(이미 입실)';
+  if (co && today > co) return 'post';
+  if (co && today === co) return 'checkout';
+  if (ci && today < ci) return 'pre';
+  if (ci && today === ci) return 'checkin';
+  return 'stay';
 }
-// [예약 상태] 프롬프트 블록: 현재 시각(KST)+숙박일+단계. 날짜 미상이어도 현재 시각은 항상 제공.
-function stayStateBlock_(ci, co) {
+var STAGE_LABEL = {
+  pre: '도착 전', checkin: '체크인 당일(15:00부터 입실)', stay: '숙박 중(이미 입실)',
+  checkout: '체크아웃일(11:00까지 퇴실)', post: '체크아웃 후(이미 퇴실 — 도착·체크인 안내 금지)'
+};
+// 오늘(KST) 'yyyy-MM-dd'
+function todayKst_() { return Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'); }
+// [예약 상태] 프롬프트 블록: 현재 시각(KST)+숙박일+단계+체크인 안내 발송 여부(확인된 경우만).
+function stayStateBlock_(ci, co, stage, codeSent) {
   var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
-  var stage = stayStage_(now.slice(0, 10), ci, co);
   var s = '[예약 상태] 현재 시각 ' + now + ' (KST)';
   if (ci || co) s += ' · 체크인 ' + (ci || '미상') + ' ~ 체크아웃 ' + (co || '미상');
-  if (stage) s += ' · 단계: ' + stage;
+  if (stage) s += ' · 단계: ' + STAGE_LABEL[stage];
+  if (codeSent === true)  s += ' · 체크인 안내(객실번호·도어코드) 이미 발송됨 — "곧 보내드리겠다"는 안내 금지, 이미 받았는지 확인만';
+  if (codeSent === false) s += ' · 체크인 안내(객실번호·도어코드) 아직 발송 전 — 도착 당일 플랫폼 메시지로 발송 예정이라고 안내 가능';
   return s + '\n\n';
+}
+// (#4) HK 체크인 안내 메일(s3_checkin, 1박은 s34_combined — 객실번호·도어코드 포함) 발송 여부.
+//   app/mailLogs 읽기 전용(§3의 app/* '쓰기' 금지 준수). 단계상 의미 있는 구간만 조회(urlfetch 절약).
+//   true=발송됨 / false=미발송 확인 / null=확인 불가(매핑 실패·조회 불필요 구간·조회 실패)
+function checkinMailSent_(sirvoy, stage) {
+  if (!sirvoy || !sirvoy.svBid) return null;
+  if (stage !== 'checkin' && stage !== 'stay' && stage !== 'checkout') return null;
+  var bid = String(sirvoy.svBid).replace(/[.#$\[\]\/]/g, '_');
+  try {
+    if (fbGet('app/mailLogs/' + bid + '_s3_checkin')) return true;
+    if (fbGet('app/mailLogs/' + bid + '_s34_combined')) return true;
+    return false;
+  } catch (e) { return null; }
+}
+// (#3) 발송 전 금칙 셀프체크(순수, 테스트용). 차단 아님 — DESK 대기 카드 ⚠️ 표시용.
+var GUARD_CODE_NOUN    = /(room (number|no\b)|access ?code|door ?code|객실 ?번호|도어 ?코드|비밀번호)/i;
+var GUARD_SEND_FUTURE  = /(will (be )?sen[dt]|will send|we('ll| will) send|going to send|sent (to you )?shortly|shortly|soon|곧 |보내드릴|보내 ?드릴게|발송해 ?드릴|전송해 ?드릴)/i;
+var GUARD_ARRIVAL_GUIDE = /(check[- ]?in is (from|at)|check[- ]?in starts|shuttle|bus 0?3|03번|셔틀|체크인은 15|오시는 ?길)/i;
+function guardFlags_(stage, codeSent, reply) {
+  var r = String(reply || ''), flags = [];
+  if (GUARD_CODE_NOUN.test(r) && GUARD_SEND_FUTURE.test(r)) {
+    if (stage === 'stay' || stage === 'checkout' || stage === 'post') flags.push('입실 이후 게스트에게 코드 발송을 다시 약속하는 문구');
+    else if (codeSent === true) flags.push('체크인 안내 기발송인데 코드 발송을 새로 약속하는 문구');
+  }
+  if (stage === 'post' && GUARD_ARRIVAL_GUIDE.test(r)) flags.push('퇴실한 게스트에게 도착·체크인 안내 문구');
+  return flags;
 }
 
 // Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
 //   history(있으면) = 같은 예약 이전 대화 트랜스크립트 → 프롬프트에 얹어 맥락 반영(호출 수 불변, 1회).
 //   state(있으면) = stayStateBlock_() 산출 [예약 상태] 블록 — 도착 전/입실/퇴실 단계 오답 방지(2026-07-25).
-function claudeDraft_(inbox, examples, history, state) {
+//   corrections(있으면) = retrieveCorrections_() 교정쌍 — 초안의 반복 실수 억제(#1, 2026-07-25).
+function claudeDraft_(inbox, examples, history, state, corrections) {
   var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
 
   var ex = '';
   for (var i = 0; i < examples.length; i++)
     ex += '상황: ' + (examples[i]['상황요약'] || '') + '\n답변: ' + (examples[i]['최종답변'] || '') + '\n---\n';
+  var corr = '';
+  if (corrections && corrections.length) {
+    corr = '[클라라 교정 사례] (시스템 초안을 클라라가 직접 고친 기록 — 초안이 저지른 실수의 방향을 파악해 같은 실수를 반복하지 말고, 수정본 쪽 태도·사실을 따르세요)\n';
+    for (var ci2 = 0; ci2 < corrections.length; ci2++)
+      corr += '상황: ' + String(corrections[ci2].orig || '').slice(0, 300) +
+              '\n시스템 초안(잘못): ' + String(corrections[ci2].before || '').slice(0, 600) +
+              '\n클라라 수정본(정답): ' + String(corrections[ci2].after || '').slice(0, 600) + '\n---\n';
+    corr += '\n';
+  }
   var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
   var hist = history ? ('[이 예약의 이전 대화] (시간순, 이미 안내한 내용 반복 금지)\n' + history + '\n\n') : '';
-  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + hist + (state || '') +
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + corr + hist + (state || '') +
              '[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
              '\n\n위 지침대로 JSON만 출력하세요.';
 
@@ -1464,8 +1539,10 @@ function diagPeekTasks(msgId) {
   _diagRaw = true;
   try {
     var sv = findSirvoy_(inbox.bookingId); // 프로덕션 makeDraftFor_ 와 동일 프롬프트 재현
-    var d = claudeDraft_(inbox, retrieveExamples_(inbox), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts),
-                         stayStateBlock_((sv && sv.checkinDate) || inbox.checkinDate || null, (sv && sv.checkoutDate) || inbox.checkoutDate || null));
+    var dci = (sv && sv.checkinDate) || inbox.checkinDate || null, dco = (sv && sv.checkoutDate) || inbox.checkoutDate || null;
+    var dstage = stayStage_(todayKst_(), dci, dco);
+    var d = claudeDraft_(inbox, retrieveExamples_(inbox, dstage), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts),
+                         stayStateBlock_(dci, dco, dstage, checkinMailSent_(sv, dstage)), retrieveCorrections_(inbox));
     Logger.log('파싱된 tasks[] = ' + JSON.stringify(d.tasks || []));
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
@@ -1596,7 +1673,8 @@ function findSirvoy_(bookingId) {
     if (b && b.cancelled) continue; // 취소된 예약은 매칭 제외(방·일자 보강에 취소 기록 오염 방지, 2026-07-14)
     if (b && String(b.channelBookingId) === String(bookingId))
       // 방번호·숙박일자를 같은 HK 레코드에서 함께 반환(HK index.html:1268 확인 — checkinDate/checkoutDate/assignedRoom 동일 레코드).
-      return { sirvoyId: key, room: (b.assignedRoom || null),
+      return { sirvoyId: key, svBid: (b.bookingId || null), // svBid: HK mailLogs 키 재료(체크인 안내 발송 여부 조회, #4)
+               room: (b.assignedRoom || null),
                checkinDate: (b.checkinDate || null), checkoutDate: (b.checkoutDate || null) };
   }
   return null; // 매칭 실패 → null 허용 (폴백 미구현, Fable 지시)
