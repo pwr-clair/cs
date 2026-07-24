@@ -1007,6 +1007,9 @@ var CLARA_SYSTEM =
   '- 건물을 못 찾거나 첫 도착 안내: https://pwr-clair.github.io/cs/assets/images/Building.jpg (건물 외관), https://pwr-clair.github.io/cs/assets/images/Elevator-1st-floor-01.jpeg (1층 엘리베이터)\n' +
   '[이전 대화 맥락] 사용자 메시지에 [이 예약의 이전 대화]가 함께 오면 반드시 그 흐름을 이어서 답하세요. ' +
   '이미 안내한 내용(도착/셔틀/체크인 등)을 반복하지 말고, 게스트가 짧은 감사·확인("thanks","ok","감사합니다")만 보냈으면 도착 안내 풀세트를 다시 붙이지 말고 짧고 따뜻하게 화답하세요. 새 질문에만 새 정보로 답합니다.\n' +
+  '[예약 상태] 사용자 메시지에 [예약 상태](현재 시각·숙박일·단계)가 오면 반드시 그 단계에 맞춰 답하세요. ' +
+  '게스트가 이미 도착·입실했다고 알려온 경우("we have arrived", "just checked in" 등) 객실 번호·도어코드를 곧 보내주겠다는 안내를 절대 하지 마세요 — 이미 입실했다면 코드는 이미 받은 상태이며, 그때는 짧은 환영 인사와 불편 시 연락처 안내로만 답합니다. ' +
+  '체크아웃 후 게스트에게 도착·체크인 안내를 붙이지 마세요.\n' +
   '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
   '[답변 필요도] replyNeeded: 이 메시지에 답장이 필요한지 판단하세요. 반드시 이전 대화 맥락을 함께 고려합니다 — 우리가 이미 답한 내용에 대한 단순 감사·확인·수신 알림("thanks","ok","알겠습니다", 자동 통지성 정보 등)이라 답을 안 보내도 자연스러우면 false, 질문·요청이 있거나 첫 인사라 답이 예의상 필요하면 true. 맺음말·서명 조각만 별도 메시지로 온 경우("Kind Regards","Best","이름만" 등 — 직전 메시지의 끝인사가 잘려 따로 도착한 것)도 false — 용건은 직전 메시지가 담당하며 이 조각에 따로 답하면 오히려 어색합니다. 기준: 이 메시지 자체에 새 질문·요청·새 정보가 하나도 없으면 false 쪽으로 판단하세요. false일 때 replyNote에 이유를 한국어 한 줄로(예: "안내 확인 감사 인사 — 답 없어도 자연스러움", "맺음말 조각 — 용건은 직전 메시지에서 처리").\n' +
   '[게스트 감정] sentiment: 이 게스트의 현재 감정·태도를 "positive"(만족·호의적), "neutral", "negative"(불만·불편) 중 하나로.\n' +
@@ -1120,7 +1123,7 @@ function makeManualDraft_(rid, text) {
   var inboxLike = { parsed: { message: text }, lang: guessLang_(text), bookingId: null, guest: null,
                     source: 'manual', emailReply: false, receivedAt: new Date().toISOString(), raw: { body: text } };
   var examples = retrieveExamples_(inboxLike);
-  var d = claudeDraft_(inboxLike, examples, '');       // 기존 초안 생성 로직 재사용(코퍼스 few-shot), 호출 1회
+  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null)); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
   var manualId = 'manual_' + rid;
   fbSet('cs/drafts/' + manualId, {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1257,8 +1260,10 @@ function retrieveThreadHistory_(msgId, cur, allInbox, allDrafts) {
 function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   var examples = retrieveExamples_(inbox);
   var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
-  var d = claudeDraft_(inbox, examples, history);                          // 초안 호출 1회에 이력·태스크 통합
-  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room, checkinDate, checkoutDate} 또는 null
+  var sirvoy = findSirvoy_(inbox.bookingId); // {sirvoyId, room, checkinDate, checkoutDate} 또는 null — Claude 호출 전에 조회해 [예약 상태] 블록에도 사용
+  var ci = (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null;
+  var co = (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null;
+  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co)); // 초안 호출 1회에 이력·태스크·예약상태 통합
 
   var rec = {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1273,8 +1278,8 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
     room: sirvoy ? sirvoy.room : null,
     receivedAt: inbox.receivedAt || null,       // 게스트 원 메일 수신시각(정렬·지난문의 판별용, inbox에서 승계)
     // 숙박일자: HK app/pendingBookings(방번호와 동일 경로) 우선, 파서(inbox)값 폴백, 둘 다 없으면 null→'미상'.
-    checkinDate: (sirvoy && sirvoy.checkinDate) || inbox.checkinDate || null,
-    checkoutDate: (sirvoy && sirvoy.checkoutDate) || inbox.checkoutDate || null,
+    checkinDate: ci,
+    checkoutDate: co,
     hasHistory: !!history,                       // 맥락 참조 여부(DESK 표시·디버그용)
     noReplySuggested: d.replyNeeded === false,   // 답불요 추천(7월 표시만, 자동처리 없음 — 2026-07-14 B1-5)
     noReplyNote: d.replyNeeded === false ? (d.replyNote || '') : null,
@@ -1366,9 +1371,29 @@ function retrieveExamples_(inbox) {
   return out;
 }
 
+// 예약 단계 판정(순수, 테스트용): today/ci/co 는 'yyyy-MM-dd' 문자열(사전순=시간순). 날짜 전무 → null.
+function stayStage_(today, ci, co) {
+  if (!ci && !co) return null;
+  if (co && today > co) return '체크아웃 후(이미 퇴실 — 도착·체크인 안내 금지)';
+  if (co && today === co) return '체크아웃일(11:00까지 퇴실)';
+  if (ci && today < ci) return '도착 전';
+  if (ci && today === ci) return '체크인 당일(15:00부터 입실)';
+  return '숙박 중(이미 입실)';
+}
+// [예약 상태] 프롬프트 블록: 현재 시각(KST)+숙박일+단계. 날짜 미상이어도 현재 시각은 항상 제공.
+function stayStateBlock_(ci, co) {
+  var now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+  var stage = stayStage_(now.slice(0, 10), ci, co);
+  var s = '[예약 상태] 현재 시각 ' + now + ' (KST)';
+  if (ci || co) s += ' · 체크인 ' + (ci || '미상') + ' ~ 체크아웃 ' + (co || '미상');
+  if (stage) s += ' · 단계: ' + stage;
+  return s + '\n\n';
+}
+
 // Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
 //   history(있으면) = 같은 예약 이전 대화 트랜스크립트 → 프롬프트에 얹어 맥락 반영(호출 수 불변, 1회).
-function claudeDraft_(inbox, examples, history) {
+//   state(있으면) = stayStateBlock_() 산출 [예약 상태] 블록 — 도착 전/입실/퇴실 단계 오답 방지(2026-07-25).
+function claudeDraft_(inbox, examples, history, state) {
   var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
 
@@ -1377,7 +1402,7 @@ function claudeDraft_(inbox, examples, history) {
     ex += '상황: ' + (examples[i]['상황요약'] || '') + '\n답변: ' + (examples[i]['최종답변'] || '') + '\n---\n';
   var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
   var hist = history ? ('[이 예약의 이전 대화] (시간순, 이미 안내한 내용 반복 금지)\n' + history + '\n\n') : '';
-  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + hist +
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + hist + (state || '') +
              '[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
              '\n\n위 지침대로 JSON만 출력하세요.';
 
@@ -1438,7 +1463,9 @@ function diagPeekTasks(msgId) {
   var allInbox = fbGet('cs/inbox') || {}, allDrafts = fbGet('cs/drafts') || {};
   _diagRaw = true;
   try {
-    var d = claudeDraft_(inbox, retrieveExamples_(inbox), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts));
+    var sv = findSirvoy_(inbox.bookingId); // 프로덕션 makeDraftFor_ 와 동일 프롬프트 재현
+    var d = claudeDraft_(inbox, retrieveExamples_(inbox), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts),
+                         stayStateBlock_((sv && sv.checkinDate) || inbox.checkinDate || null, (sv && sv.checkoutDate) || inbox.checkoutDate || null));
     Logger.log('파싱된 tasks[] = ' + JSON.stringify(d.tasks || []));
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
