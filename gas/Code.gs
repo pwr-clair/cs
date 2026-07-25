@@ -1448,7 +1448,7 @@ function retrieveExamples_(inbox, stage) {
   return out;
 }
 
-// (#1) cs/learn(초안→클라라 수정본 쌍) 유사사례 상위 2건 — "초안이 저지른 실수"를 few-shot으로 교정.
+// (#1) cs/learn(초안→클라라 수정본 쌍) 유사사례 상위 3건 — "초안이 저지른 실수"를 few-shot으로 교정.
 //   채택 기준: 언어 일치(+5) + 키워드 겹침, 합계 6점 이상(언어만 같아선 미채택 — 관련성 요구).
 function retrieveCorrections_(inbox) {
   var learn = fbGet('cs/learn'); if (!learn) return [];
@@ -1465,8 +1465,51 @@ function retrieveCorrections_(inbox) {
     if (score >= 6) arr.push({ c: c, score: score });
   }
   arr.sort(function (a, b) { return b.score - a.score; });
-  var out = []; for (var i = 0; i < arr.length && i < 2; i++) out.push(arr[i].c);
+  var out = []; for (var i = 0; i < arr.length && i < 3; i++) out.push(arr[i].c);
   return out;
+}
+
+// (1회성, 2026-07-25 클라라 지시) 과거 수정 승인분 소급 적재 — cs/drafts에 보존된 (초안, 클라라 수정본)
+//   쌍을 전부 cs/learn으로. 배경: 7월 학습모드 동안 교정쌍 적재 경로가 발송 워커에만 있어 미축적.
+//   대상: editedByClara + 승인 완결(saved/sent) + 초안과 최종본이 실제로 다른 건. 기존 키는 건너뜀(멱등).
+//   단계(stage)는 당시 수신 시각 기준으로 소급 계산. Clara가 GAS 에디터에서 1회 실행.
+function backfillLearnPairs() {
+  var drafts = fbGet('cs/drafts') || {};
+  var learn = fbGet('cs/learn') || {};
+  var n = 0, kept = 0;
+  for (var id in drafts) {
+    var d = drafts[id]; if (!d) continue;
+    if (!d.editedByClara) continue;
+    if (d.status !== 'saved' && d.status !== 'sent') continue;
+    var before = String(d.reply || ''), after = String(d.finalReply || d.claraFinal || d.editedReply || '');
+    if (!before || !after || before === after) continue;
+    if (learn[id]) { kept++; continue; }
+    var stage = null;
+    if (d.receivedAt && (d.checkinDate || d.checkoutDate)) {
+      try { stage = stayStage_(Utilities.formatDate(new Date(d.receivedAt), 'Asia/Seoul', 'yyyy-MM-dd'), d.checkinDate || null, d.checkoutDate || null); } catch (e) {}
+    }
+    fbSet('cs/learn/' + id, {
+      before: before, after: after, orig: String(d.origMsg || ''),
+      lang: d.lang || 'en', category: d.category || null, stage: stage,
+      src: 'backfill', ts: new Date().toISOString()
+    });
+    n++;
+  }
+  Logger.log('교정쌍 소급 적재 완료: +' + n + '건 (기존 유지 ' + kept + '건) → cs/learn 총 ' + (Object.keys(learn).length + n) + '건. 다음 초안부터 유사 상황 few-shot으로 주입됩니다.');
+  return n;
+}
+
+// (전환 스위치, 2026-07-25 클라라 결정 — 실발송 테스트 개시) cs/config/learnMode 토글.
+//   goLiveSending(): 실발송 ON — 승인=Gmail 원 스레드 실발송(발송 시 corpus·교정쌍 적재 재개),
+//   시트 저장·재편집 정정 워커 중단, 후기요청 초안 자동 재개. autoSend는 별개(기본 OFF=전건 수동 승인).
+//   기존 saved(학습모드 승인분)는 재발송되지 않음. 문제 시 backToLearnMode() 1회로 즉시 복귀.
+function goLiveSending() {
+  fbSet('cs/config/learnMode', false);
+  Logger.log('▶ 실발송 모드 ON — 이후 [승인]하는 초안은 게스트에게 실제 발송됩니다. DESK 상단 태그가 학습모드에서 바뀌었는지 확인하세요.');
+}
+function backToLearnMode() {
+  fbSet('cs/config/learnMode', true);
+  Logger.log('◀ 학습모드 복귀 — 승인=시트 저장, 게스트 발송 없음.');
 }
 
 // 예약 단계 판정(순수, 테스트용): today/ci/co 는 'yyyy-MM-dd' 문자열(사전순=시간순).
