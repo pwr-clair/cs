@@ -276,6 +276,17 @@ button{font-family:inherit;}
     </div>
   </details>
 
+  <!-- 정보 교육 (cs/config/knowledgeNotes): 등록 즉시 모든 새 초안이 최신 확정 사실로 사용 (2026-07-25) -->
+  <details class="gen" style="margin-top:8px;">
+    <summary style="cursor:pointer;font-size:13px;font-weight:700;padding:2px 0;">📘 정보 교육 <span id="knowCount" style="font-weight:400;color:#8a8a80;"></span></summary>
+    <div style="font-size:11px;color:#8a8a80;margin:6px 0;">여기 등록한 내용은 이후 모든 초안이 최신 확정 정보로 알고 답합니다(기존 안내·과거 예시와 어긋나면 이쪽이 우선). 예: "8/1~8/5 엘리베이터 점검 — 오전 9~11시 운행 중단", "짐 보관은 불가 대신 공항 T1 3층 유인보관소 안내". 낡으면 삭제하세요.</div>
+    <div id="knowList" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;"></div>
+    <div style="display:flex;gap:6px;">
+      <input class="gen-box" id="knowBox" style="min-height:0;height:36px;flex:1;" placeholder="게스트 응대에 반영할 정보를 한 줄로…">
+      <button class="gen-btn" style="width:auto;padding:0 16px;" onclick="addKnow()">등록</button>
+    </div>
+  </details>
+
   <div class="tabs">
     <button class="tab active wait-hot" onclick="showTab(0,this)">대기<span class="n" id="tWait">0</span></button>
     <button class="tab" onclick="showTab(1,this)">업무<span class="n" id="tTask">—</span></button>
@@ -342,6 +353,7 @@ const nameToEmail = (name)=> String(name||'').trim().toLowerCase() + '@pwr.local
 let isLoggedIn=false, currentUser=null, listenersStarted=false;
 let drafts={}, auto=false, budgetData=null, learnMode=true; // 학습모드 기본 ON(노드 부재 시 발송 금지)
 let bans={}; // cs/config/bannedPhrases — 금칙 문구(초안 프롬프트 금지+위반 ⚠️)
+let knows={}; // cs/config/knowledgeNotes — 정보 교육(초안이 최신 확정 사실로 사용)
 let saveHookUrl=''; // GAS 웹앱 즉시저장 엔드포인트(cs/config/saveHookUrl). 미배포면 '' → 5분 폴링 폴백.
 let tasks={}; // cs/tasks (업무 후보/활성/완료)
 let manualQueue={}; // cs/manualQueue (즉석 생성 요청 상태)
@@ -394,6 +406,7 @@ function startListeners(){
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
   onValue(ref(db,'cs/config/bannedPhrases'), snap=>{ bans = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderBans(); }, permErr('cs/config/bannedPhrases'));
+  onValue(ref(db,'cs/config/knowledgeNotes'), snap=>{ knows = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderKnows(); }, permErr('cs/config/knowledgeNotes'));
   onValue(ref(db,'cs/suggestions'), snap=>{ suggestions = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderSugg(); }, permErr('cs/suggestions'));
   onValue(ref(db,'cs/reviewQueue'), snap=>{ reviewQueue = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderReview(); }, permErr('cs/reviewQueue'));
   onValue(ref(db,'cs/tasks'), snap=>{ tasks = snap.exists()?(snap.val()||{}):{}; if(isLoggedIn)renderTasks(); }, permErr('cs/tasks'));
@@ -402,7 +415,7 @@ function startListeners(){
 }
 
 // ── 렌더 ──
-function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); renderReview(); renderAuto(); renderBudget(); renderGenStatus(); renderBans(); }
+function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); renderReview(); renderAuto(); renderBudget(); renderGenStatus(); renderBans(); renderKnows(); }
 // (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
 function reconcileOptimistic(){
   optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
@@ -759,6 +772,20 @@ function addBan(){
     .then(()=>{ box.value=''; toast('금칙 등록 — 다음 초안부터 적용'); }).catch(e=>toast('실패: 쓰기 권한'));
 }
 function delBan(id){ remove(ref(db,'cs/config/bannedPhrases/'+id)).then(()=>toast('금칙 삭제')).catch(e=>toast('실패: 쓰기 권한')); }
+// ── 정보 교육 관리 (cs/config/knowledgeNotes) ──
+function renderKnows(){
+  const list=document.getElementById('knowList'), cnt=document.getElementById('knowCount'); if(!list) return;
+  const entries=Object.entries(knows||{});
+  if(cnt) cnt.textContent=entries.length?entries.length+'건 적용 중':'';
+  list.innerHTML=entries.map(([k,b])=>'<div style="display:flex;align-items:center;gap:8px;font-size:12px;background:var(--card,#fff);border:1px solid #e5e2d8;border-radius:6px;padding:5px 8px;"><span style="flex:1;">📘 '+esc(b.text||'')+'</span><button class="b skip" style="padding:2px 8px;font-size:11px;" onclick="delKnow(\''+k+'\')">삭제</button></div>').join('');
+}
+function addKnow(){
+  const box=document.getElementById('knowBox'), v=(box&&box.value||'').trim();
+  if(!v){ toast('반영할 정보를 입력하세요'); return; }
+  push(ref(db,'cs/config/knowledgeNotes'),{text:v,addedAt:new Date().toISOString()})
+    .then(()=>{ box.value=''; toast('정보 등록 — 다음 초안부터 반영'); }).catch(e=>toast('실패: 쓰기 권한'));
+}
+function delKnow(id){ remove(ref(db,'cs/config/knowledgeNotes/'+id)).then(()=>toast('정보 삭제')).catch(e=>toast('실패: 쓰기 권한')); }
 
 function approveTask(id){ update(ref(db,'cs/tasks/'+id),{status:'active',activatedAt:new Date().toISOString()}).then(()=>toast('업무 승인')).catch(e=>toast('실패: 쓰기 권한')); }
 function rejectTask(id){ update(ref(db,'cs/tasks/'+id),{status:'rejected',rejectedAt:new Date().toISOString()}).then(()=>toast('업무 기각')).catch(e=>toast('실패: 쓰기 권한')); }
@@ -1091,7 +1118,7 @@ window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone
 window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant; window.dismissGenErr=dismissGenErr;
 window.approveSugg=approveSugg; window.rejectSugg=rejectSugg; window.gotoSuggTab=gotoSuggTab;
 window.approveReview=approveReview; window.skipReview=skipReview;
-window.addBan=addBan; window.delBan=delBan;
+window.addBan=addBan; window.delBan=delBan; window.addKnow=addKnow; window.delKnow=delKnow;
 </script>
 </body>
 </html>

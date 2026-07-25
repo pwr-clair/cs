@@ -1153,7 +1153,8 @@ function makeManualDraft_(rid, text) {
   var inboxLike = { parsed: { message: text }, lang: guessLang_(text), bookingId: null, guest: null,
                     source: 'manual', emailReply: false, receivedAt: new Date().toISOString(), raw: { body: text } };
   var examples = retrieveExamples_(inboxLike);
-  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null, null, null), retrieveCorrections_(inboxLike), bannedPhrases_()); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
+  var g1 = claraGuides_();
+  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null, null, null), retrieveCorrections_(inboxLike), g1.banned, g1.knowledge); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
   var manualId = 'manual_' + rid;
   fbSet('cs/drafts/' + manualId, {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1295,10 +1296,10 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   var codeSent = checkinMailSent_(sirvoy, stage);         // (#4) HK 체크인 안내 발송 사실(읽기 전용)
   var examples = retrieveExamples_(inbox, stage);         // (#2) 동단계 예시 가중
   var corrections = retrieveCorrections_(inbox);          // (#1) 클라라 교정쌍 few-shot
-  var banned = bannedPhrases_();                          // 클라라 금칙 문구(프롬프트 금지+위반 ⚠️)
+  var guides = claraGuides_();                            // 클라라 금칙 문구+교육 정보(프롬프트 주입, run당 fetch 1회)
   var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
-  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co, stage, codeSent), corrections, banned); // 초안 호출 1회에 전부 통합
-  var flags = guardFlags_(stage, codeSent, d.reply, banned); // (#3) 금칙 셀프체크(표시용, 차단 아님)
+  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co, stage, codeSent), corrections, guides.banned, guides.knowledge); // 초안 호출 1회에 전부 통합
+  var flags = guardFlags_(stage, codeSent, d.reply, guides.banned); // (#3) 금칙 셀프체크(표시용, 차단 아님)
 
   var rec = {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1578,12 +1579,17 @@ function guardFlags_(stage, codeSent, reply, banned) {
   }
   return flags;
 }
-// 금칙 문구 목록 (cs/config/bannedPhrases — DESK에서 등록·삭제)
-function bannedPhrases_() {
-  var m = fbGet('cs/config/bannedPhrases') || {};
-  var out = [];
-  for (var k in m) if (m[k] && m[k].text) out.push(String(m[k].text));
-  return out;
+// 클라라 지도 노트 (DESK에서 등록·삭제, run-local 캐시로 run당 fetch 1회)
+//   banned = cs/config/bannedPhrases(금칙 문구) · knowledge = cs/config/knowledgeNotes(정보 교육, 2026-07-25 신설)
+var _claraGuidesCache = null;
+function claraGuides_() {
+  if (_claraGuidesCache) return _claraGuidesCache;
+  var cfg = fbGet('cs/config') || {};
+  var banned = [], knowledge = [], k;
+  var bm = cfg.bannedPhrases || {};  for (k in bm) if (bm[k] && bm[k].text) banned.push(String(bm[k].text));
+  var km = cfg.knowledgeNotes || {}; for (k in km) if (km[k] && km[k].text) knowledge.push(String(km[k].text));
+  _claraGuidesCache = { banned: banned, knowledge: knowledge };
+  return _claraGuidesCache;
 }
 
 // Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
@@ -1591,7 +1597,8 @@ function bannedPhrases_() {
 //   state(있으면) = stayStateBlock_() 산출 [예약 상태] 블록 — 도착 전/입실/퇴실 단계 오답 방지(2026-07-25).
 //   corrections(있으면) = retrieveCorrections_() 교정쌍 — 초안의 반복 실수 억제(#1, 2026-07-25).
 //   banned(있으면) = 클라라 금칙 문구 배열 — 프롬프트 수준 금지(2026-07-25).
-function claudeDraft_(inbox, examples, history, state, corrections, banned) {
+//   knowledge(있으면) = 클라라 교육 정보 배열 — 최신 확정 사실로 주입(2026-07-25).
+function claudeDraft_(inbox, examples, history, state, corrections, banned, knowledge) {
   var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
 
@@ -1613,9 +1620,15 @@ function claudeDraft_(inbox, examples, history, state, corrections, banned) {
     for (var bi = 0; bi < banned.length; bi++) ban += '- ' + String(banned[bi]).slice(0, 200) + '\n';
     ban += '\n';
   }
+  var know = '';
+  if (knowledge && knowledge.length) {
+    know = '[클라라 교육 정보] 아래는 클라라가 직접 등록한 최신 확정 정보입니다. 관련 문의엔 이 내용을 사실로 사용해 정확히 답하세요. [숙소 확정 정보]나 [과거 응대 예시]와 어긋나면 이쪽이 최신이므로 우선합니다:\n';
+    for (var ki = 0; ki < knowledge.length; ki++) know += '- ' + String(knowledge[ki]).slice(0, 400) + '\n';
+    know += '\n';
+  }
   var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
   var hist = history ? ('[이 예약의 이전 대화] (시간순, 이미 안내한 내용 반복 금지)\n' + history + '\n\n') : '';
-  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + corr + hist + (state || '') + ban +
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + corr + hist + (state || '') + ban + know +
              '[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
              '\n\n위 지침대로 JSON만 출력하세요.';
 
@@ -1679,8 +1692,9 @@ function diagPeekTasks(msgId) {
     var sv = findSirvoy_(inbox.bookingId); // 프로덕션 makeDraftFor_ 와 동일 프롬프트 재현
     var dci = (sv && sv.checkinDate) || inbox.checkinDate || null, dco = (sv && sv.checkoutDate) || inbox.checkoutDate || null;
     var dstage = stayStage_(todayKst_(), dci, dco);
+    var dg = claraGuides_();
     var d = claudeDraft_(inbox, retrieveExamples_(inbox, dstage), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts),
-                         stayStateBlock_(dci, dco, dstage, checkinMailSent_(sv, dstage)), retrieveCorrections_(inbox), bannedPhrases_());
+                         stayStateBlock_(dci, dco, dstage, checkinMailSent_(sv, dstage)), retrieveCorrections_(inbox), dg.banned, dg.knowledge);
     Logger.log('파싱된 tasks[] = ' + JSON.stringify(d.tasks || []));
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
