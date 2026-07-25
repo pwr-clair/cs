@@ -691,9 +691,10 @@ function sentSimple(id,d){
 
 // ── (4) 업무 탭 (cs/tasks) ──
 const TASK_ORDER={proposed:0,active:1,done:2};
-function taskCmp(a,b){ const sa=TASK_ORDER[a[1].status]??9, sb=TASK_ORDER[b[1].status]??9;
-  if(sa!==sb) return sa-sb;
-  const da=String(a[1].dueHint||''), db2=String(b[1].dueHint||''); if(da!==db2) return da<db2?-1:1;
+// 2026-07-25 지시 ①: 관련일(도착일=relatedDate, 없으면 생성일) 가까운 순. 지난 건·완료 건은 하단 접힘.
+function taskDateKey(t){ return String(t.relatedDate||(t.createdAt||'').slice(0,10)||'9999-12-31'); }
+function taskCmp(a,b){ const ka=taskDateKey(a[1]), kb=taskDateKey(b[1]); if(ka!==kb) return ka<kb?-1:1;
+  const sa=TASK_ORDER[a[1].status]??9, sb=TASK_ORDER[b[1].status]??9; if(sa!==sb) return sa-sb;
   return String(a[1].room||'').localeCompare(String(b[1].room||'')); }
 function renderTasks(){
   const list=document.getElementById('taskList'), empty=document.getElementById('emptyTask'); if(!list) return;
@@ -703,12 +704,16 @@ function renderTasks(){
   const tT=document.getElementById('tTask'); if(tT) tT.textContent=actionable;
   if(!entries.length){ list.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  entries.sort(taskCmp);
-  list.innerHTML=entries.map(([k,t])=>taskCard(k,t)).join('');
+  const todayKst=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+  const isPast=([k,t])=> t.status==='done' || taskDateKey(t)<todayKst;
+  const current=entries.filter(e=>!isPast(e)).sort(taskCmp);
+  const past=entries.filter(isPast).sort(taskCmp).reverse(); // 최근 지난 것부터
+  list.innerHTML=current.map(([k,t])=>taskCard(k,t)).join('')+
+    (past.length?'<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:12px;color:var(--muted,#8a8a80);padding:6px 2px;">지난·완료 '+past.length+'건 펼치기</summary>'+past.map(([k,t])=>taskCard(k,t)).join('')+'</details>':'');
 }
 function taskCard(id,t){
   const st=t.status||'proposed';
-  const meta=[t.room?('방 '+esc(t.room)):'', t.guest?esc(t.guest):'', t.dueHint?esc(t.dueHint):''].filter(Boolean).join(' · ');
+  const meta=[t.room?('방 '+esc(t.room)):'', t.guest?esc(t.guest):'', t.relatedDate?('도착 '+esc(String(t.relatedDate).slice(5))):'', t.dueHint?esc(t.dueHint):''].filter(Boolean).join(' · ');
   let badge='', actions='';
   if(st==='proposed'){
     badge='<span class="tk-badge tk-prop">후보</span>';

@@ -1011,7 +1011,7 @@ var CLARA_SYSTEM =
   '[예약 상태] 사용자 메시지에 [예약 상태](현재 시각·숙박일·단계)가 오면 반드시 그 단계에 맞춰 답하세요. ' +
   '게스트가 이미 도착·입실했다고 알려온 경우("we have arrived", "just checked in" 등) 객실 번호·도어코드를 곧 보내주겠다는 안내를 절대 하지 마세요 — 이미 입실했다면 코드는 이미 받은 상태이며, 그때는 짧은 환영 인사와 불편 시 연락처 안내로만 답합니다. ' +
   '체크아웃 후 게스트에게 도착·체크인 안내를 붙이지 마세요.\n' +
-  '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
+  '[업무(태스크) 추출] 이 메시지에 나중에 사람이 처리해야 할 요청·약속(예: 특정 시각 도착 반영, 추가 침구, 얼리체크인·레이트체크아웃, 개별 준비물)이 있으면 tasks 배열에 {"text": 한국어 할 일 한 줄, "dueHint": 시점 힌트(있으면 "체크아웃 전"/"도착일" 등, 없으면 "")}로 담으세요. 게스트가 연도 없이 날짜만 말했으면 [예약 상태]의 체크인 연도로 해석하세요 — 과거 연도(작년 등)를 지어 쓰지 말 것. 처리할 것이 없거나 단순 정보 문의면 tasks는 빈 배열 [].\n' +
   '[답변 필요도] replyNeeded: 이 메시지에 답장이 필요한지 판단하세요. 반드시 이전 대화 맥락을 함께 고려합니다 — 우리가 이미 답한 내용에 대한 단순 감사·확인·수신 알림("thanks","ok","알겠습니다", 자동 통지성 정보 등)이라 답을 안 보내도 자연스러우면 false, 질문·요청이 있거나 첫 인사라 답이 예의상 필요하면 true. 맺음말·서명 조각만 별도 메시지로 온 경우("Kind Regards","Best","이름만" 등 — 직전 메시지의 끝인사가 잘려 따로 도착한 것)도 false — 용건은 직전 메시지가 담당하며 이 조각에 따로 답하면 오히려 어색합니다. 기준: 이 메시지 자체에 새 질문·요청·새 정보가 하나도 없으면 false 쪽으로 판단하세요. false일 때 replyNote에 이유를 한국어 한 줄로(예: "안내 확인 감사 인사 — 답 없어도 자연스러움", "맺음말 조각 — 용건은 직전 메시지에서 처리").\n' +
   '[게스트 감정] sentiment: 이 게스트의 현재 감정·태도를 "positive"(만족·호의적), "neutral", "negative"(불만·불편) 중 하나로.\n' +
   '[도착시간(ETA) 감지] 게스트가 자기 도착 예정 시각을 대화체로 알려온 경우에만(예: "6시쯤 도착해요", "I\'ll arrive around 6pm", "비행기가 5시에 내려요 그리고 바로 갈게요") etaTime에 24시간 "HH:MM"으로(대략적 표현은 가까운 정시로, 비행기 착륙 시각만 말했으면 착륙 시각 그대로), etaQuote에 근거가 된 게스트 문장을 원문 그대로 담으세요. 다음은 ETA가 아님 — etaTime을 null로: 체크인 규정 질문("체크인 몇 시부터죠?"), 체크아웃·퇴실 시각, 우리가 안내한 시각, "저녁에요"처럼 시각 특정 불가한 표현.\n' +
@@ -1042,13 +1042,16 @@ function processInboxToDrafts() {
       if (rec.eta) {
         // ETA 요청 알림 → 자동 승인 제안 (2026-07-20 클라라: 이중 승인 제거 — 제안 탭 대기 없이
         // applySuggestions_가 5분 내 HK 반영. 취소예약 가드는 반영 시점에 그대로 작동)
-        fbSet('cs/suggestions/' + id, {
-          type: 'eta', status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(),
-          eta: rec.eta, evidence: rec.etaEvidence || '',
-          sourceMsgId: id, guest: base.guest, bookingId: base.bookingId, sirvoyId: base.sirvoyId,
-          room: base.room, checkinDate: base.checkinDate, checkoutDate: base.checkoutDate,
-          receivedAt: base.receivedAt, createdAt: base.createdAt
-        });
+        // 2026-07-25 ④: 같은 예약+같은 ETA 제안 이력 있으면 재생성 금지(1037 수기 변경 덮어쓰기 방지)
+        if (!etaAlreadySuggested_(base.bookingId, rec.eta)) {
+          fbSet('cs/suggestions/' + id, {
+            type: 'eta', status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(),
+            eta: rec.eta, evidence: rec.etaEvidence || '',
+            sourceMsgId: id, guest: base.guest, bookingId: base.bookingId, sirvoyId: base.sirvoyId,
+            room: base.room, checkinDate: base.checkinDate, checkoutDate: base.checkoutDate,
+            receivedAt: base.receivedAt, createdAt: base.createdAt
+          });
+        }
         base.status = 'sugg'; base.origin = 'notice-eta'; // 대기 미표시 마커(멱등 가드 겸용)
         fbSet('cs/drafts/' + id, base);
       } else {
@@ -1300,7 +1303,8 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
 
   // 대화체 ETA → 자동 승인 제안 (B3 후속 2026-07-15 / 2026-07-20 이중 승인 제거): 정형(notice-eta)과
   // 동일 경로 재사용 — applySuggestions_ 가 5분 내 HK 반영(취소예약 가드 포함). 초안당 1회(drafts 멱등 가드 승계).
-  if (d.etaTime) {
+  // 2026-07-25 ④: 같은 예약+같은 ETA 제안 이력(상태 불문) 있으면 재생성 금지.
+  if (d.etaTime && !etaAlreadySuggested_(rec.bookingId, d.etaTime)) {
     fbSet('cs/suggestions/' + msgId, {
       type: 'eta', status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(),
       eta: d.etaTime, evidence: d.etaQuote || '',
@@ -1322,20 +1326,62 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
 
 // (4) tasks[] → cs/tasks/{msgId_tN} (status='proposed'). 방번호·예약·게스트는 우리 데이터로 보강.
 //   멱등: makeDraftFor_ 는 초안당 1회만 실행(drafts[id] 가드)이라 태스크도 1회만 적재.
+//   2026-07-25 지시: ②같은 예약+유사 내용은 재적재 안 함(초안마다 재추출 분화 방지, Margaret 건)
+//   ③과거 연도 보정 ①정렬용 relatedDate(도착일) 저장.
 function saveTaskCandidates_(msgId, tasks, rec) {
   if (!tasks || !tasks.length) return;
-  var now = new Date().toISOString(), n = 0;
+  var existing = fbGet('cs/tasks') || {};             // 기존 태스크와 대조(태스크 있는 초안에서만 1회 fetch)
+  var ciYear = rec.checkinDate ? String(rec.checkinDate).slice(0, 4) : null;
+  var now = new Date().toISOString(), n = 0, dup = 0;
   for (var i = 0; i < tasks.length; i++) {
     var t = tasks[i]; if (!t) continue;
-    var text = String(t.text || '').trim(); if (!text) continue;
-    fbSet('cs/tasks/' + msgId + '_t' + i, {
-      text: text, dueHint: String(t.dueHint || '').trim() || null,
+    var text = fixTaskYear_(String(t.text || '').trim(), ciYear); if (!text) continue;
+    if (isDupTask_(text, rec.bookingId, rec.guest, existing)) { dup++; continue; }
+    var recTask = {
+      text: text, dueHint: fixTaskYear_(String(t.dueHint || '').trim(), ciYear) || null,
       room: rec.room || null, bookingId: rec.bookingId || null, guest: rec.guest || null,
+      relatedDate: rec.checkinDate || null,           // 업무 탭 날짜순 정렬 키(도착일)
       msgId: msgId, lang: rec.lang || null, status: 'proposed', createdAt: now
-    });
+    };
+    fbSet('cs/tasks/' + msgId + '_t' + i, recTask);
+    existing[msgId + '_t' + i] = recTask;             // 같은 초안 안의 유사 항목끼리도 dedupe
     n++;
   }
-  if (n) Logger.log('업무 후보 저장: ' + n + '건 (msg ' + msgId + ')');
+  if (n || dup) Logger.log('업무 후보 저장: ' + n + '건, 중복 스킵 ' + dup + '건 (msg ' + msgId + ')');
+}
+// ③ 연도 보정(순수, 테스트용): 체크인 연도보다 과거인 연도를 체크인 연도로 교정("2024년 7월" 오추출 방지)
+function fixTaskYear_(text, ciYear) {
+  if (!text || !ciYear) return text;
+  return text.replace(/20\d{2}/g, function (y) { return (+y < +ciYear) ? ciYear : y; });
+}
+// ② 중복 판정(순수, 테스트용): 같은 예약 + 내용 유사 → 기존 카드 1장 유지.
+//   유사도 = 게스트명 제거 후 문자 바이그램 자카드(한국어 조사 변형에 단어 자카드가 무력 — 실측으로 설계).
+//   실측(이름 제거 후): 같은 이슈 표현 변형 0.27~0.33, 다른 이슈 0.00 → 임계 0.25.
+function stripName_(s, guest) {
+  if (!guest) return s;
+  var toks = normText_(guest).split(' ');
+  for (var i = 0; i < toks.length; i++) if (toks[i]) s = s.split(toks[i]).join(' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+function bigramSim_(a, b) {
+  a = a.replace(/ /g, ''); b = b.replace(/ /g, '');
+  if (a.length < 2 || b.length < 2) return 0;
+  var A = {}, B = {}, na = 0, nb = 0, k, it = 0;
+  for (var i = 0; i < a.length - 1; i++) { k = a.substr(i, 2); if (!A[k]) { A[k] = 1; na++; } }
+  for (var j = 0; j < b.length - 1; j++) { k = b.substr(j, 2); if (!B[k]) { B[k] = 1; nb++; } }
+  for (k in A) if (B[k]) it++;
+  return it / (na + nb - it);
+}
+function isDupTask_(text, bookingId, guest, existing) {
+  var norm = stripName_(normText_(text), guest); if (!norm) return false;
+  for (var k in existing) {
+    var e = existing[k]; if (!e || !e.text) continue;
+    if (String(e.bookingId || '') !== String(bookingId || '')) continue;
+    var en = stripName_(normText_(e.text), guest);
+    if (en === norm) return true;
+    if (norm.length >= 8 && en.length >= 8 && bigramSim_(norm, en) >= 0.25) return true;
+  }
+  return false;
 }
 
 // (2c) 1회성 백로그 정리: 현재 pending(또는 status 없음) draft 전체를 dismissed로 전환.
@@ -1547,6 +1593,19 @@ function diagPeekTasks(msgId) {
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
   finally { _diagRaw = false; }
+}
+
+// ④ ETA 재제안 가드(2026-07-25): 같은 예약에 같은 ETA 제안 이력이 있으면(applied·rejected 등 상태 불문)
+//   재생성 금지. 사유: 반영→HK에서 클라라가 수기 변경→다음 메시지에서 같은 ETA 재추출→재반영으로
+//   수기 값을 계속 덮어쓰던 루프(1037 HSU WEI-CHUN 05:30 건). 게스트가 '다른' 시각을 새로 말하면 정상 제안.
+function etaAlreadySuggested_(bookingId, eta) {
+  if (!bookingId || !eta) return false;
+  var sugg = fbGet('cs/suggestions') || {};   // ETA 감지 건에서만 호출(fetch 1회)
+  for (var k in sugg) {
+    var s = sugg[k];
+    if (s && s.type === 'eta' && String(s.bookingId) === String(bookingId) && String(s.eta) === String(eta)) return true;
+  }
+  return false;
 }
 
 // ══════════════════════════════════════════════════════════════════
