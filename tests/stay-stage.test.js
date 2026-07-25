@@ -11,13 +11,19 @@ function stayStage_(today, ci, co) {
 var GUARD_CODE_NOUN    = /(room (number|no\b)|access ?code|door ?code|객실 ?번호|도어 ?코드|비밀번호)/i;
 var GUARD_SEND_FUTURE  = /(will (be )?sen[dt]|will send|we('ll| will) send|going to send|sent (to you )?shortly|shortly|soon|곧 |보내드릴|보내 ?드릴게|발송해 ?드릴|전송해 ?드릴)/i;
 var GUARD_ARRIVAL_GUIDE = /(check[- ]?in is (from|at)|check[- ]?in starts|shuttle|bus 0?3|03번|셔틀|체크인은 15|오시는 ?길)/i;
-function guardFlags_(stage, codeSent, reply) {
+function guardFlags_(stage, codeSent, reply, banned) {
   var r = String(reply || ''), flags = [];
   if (GUARD_CODE_NOUN.test(r) && GUARD_SEND_FUTURE.test(r)) {
     if (stage === 'stay' || stage === 'checkout' || stage === 'post') flags.push('입실 이후 게스트에게 코드 발송을 다시 약속하는 문구');
     else if (codeSent === true) flags.push('체크인 안내 기발송인데 코드 발송을 새로 약속하는 문구');
   }
   if (stage === 'post' && GUARD_ARRIVAL_GUIDE.test(r)) flags.push('퇴실한 게스트에게 도착·체크인 안내 문구');
+  if (banned && banned.length) {
+    for (var i = 0; i < banned.length; i++) {
+      var b = String(banned[i] || '').trim();
+      if (b.length >= 2 && r.toLowerCase().indexOf(b.toLowerCase()) >= 0) flags.push('금칙 문구 포함: "' + b.slice(0, 30) + '"');
+    }
+  }
   return flags;
 }
 
@@ -51,5 +57,12 @@ print('[4] 금칙 — 오탐 가드');
 eq('입실 후 단순 환영(코드 언급 없음) → 정상', guardFlags_('stay', true, 'So glad you arrived safely! Enjoy your stay.'), []);
 eq('코드 언급만·발송 약속 없음 → 정상', guardFlags_('stay', true, 'Your door code is in the booking.com message we sent earlier.'), []);
 ok('빈 reply 안전', guardFlags_('stay', true, null).length === 0);
+
+print('[5] 클라라 금칙 문구');
+eq('등록 문구 포함 → 플래그', JSON.stringify(guardFlags_('pre', null, 'We offer free luggage storage anytime!', ['free luggage storage'])), JSON.stringify(['금칙 문구 포함: "free luggage storage"']));
+eq('대소문자 무관', guardFlags_('pre', null, 'FREE Luggage Storage available', ['free luggage storage']).length, 1);
+eq('미포함 → 정상', guardFlags_('pre', null, 'Sorry, we cannot store luggage.', ['free luggage storage']).length, 0);
+eq('금칙 목록 없음 → 정상', guardFlags_('pre', null, 'anything', []).length, 0);
+eq('빈 문구 안전', guardFlags_('pre', null, 'anything', ['', ' ']).length, 0);
 
 print('결과: ' + pass + ' PASS / ' + fail + ' FAIL');

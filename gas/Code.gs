@@ -410,13 +410,24 @@ function saveApprovedToSheet_() {
     for (var m = 0; m < targets.length; m++) {
       var sid = targets[m][0], dm = targets[m][1];
       var editLang = dm.claraFinalLang || (String(dm.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
+      var guestFinal = resolveGuestFinal_(dm);               // 게스트 언어 발송본
       patch[sid + '/status'] = 'saved';
       patch[sid + '/savedToSheet'] = true;
       patch[sid + '/savedAt'] = now;
       patch[sid + '/saveError'] = null;
-      patch[sid + '/finalReply'] = resolveGuestFinal_(dm);   // 게스트 언어 발송본(발송 대비)
+      patch[sid + '/finalReply'] = guestFinal;               // 발송 대비 보관
       patch[sid + '/finalReplyKo'] = (editLang === 'ko') ? (dm.claraFinal || dm.replyKo || null) : (dm.replyKo || null); // 한국어 표시본
       patch[sid + '/sheetRow'] = startRow + m;               // (2) 재편집 시 이 행을 갱신(새 행 추가 아님)
+      // 2026-07-25: 학습모드 교정쌍 적재 — 종전엔 발송 워커(learnFromSend_)만 cs/learn을 채워서
+      // 7월(발송 없음) 내내 교정쌍 few-shot이 빈 창고를 조회했음. 수정 승인분을 여기서 즉시 적재.
+      // (무수정 승인분 corpus는 시트→importCorpusFromSheet 기존 경로 유지 — 이중 적재 방지)
+      if (dm.editedByClara && dm.reply && guestFinal && String(dm.reply) !== String(guestFinal)) {
+        fbSet('cs/learn/' + sid, {
+          before: dm.reply, after: guestFinal, orig: String(dm.origMsg || ''),
+          lang: dm.lang || 'en', category: dm.category || null, stage: dm.stayStage || null,
+          src: 'learnmode', ts: now
+        });
+      }
     }
     fbUpdate('cs/drafts', patch);
     Logger.log('학습 저장: ' + rows.length + '건 시트 append(row ' + startRow + '~) + status=saved');
@@ -454,11 +465,20 @@ function correctSavedRows_() {
         patch[sid + '/saveError'] = String(se).slice(0, 180); patch[sid + '/saveErrorAt'] = now; continue;
       }
       var editLang = dm.claraFinalLang || (String(dm.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
-      patch[sid + '/finalReply'] = resolveGuestFinal_(dm);
+      var guestFinal2 = resolveGuestFinal_(dm);
+      patch[sid + '/finalReply'] = guestFinal2;
       patch[sid + '/finalReplyKo'] = (editLang === 'ko') ? (dm.claraFinal || dm.replyKo || null) : (dm.replyKo || null);
       patch[sid + '/pendingCorrection'] = null;
       patch[sid + '/savedAt'] = now;
       patch[sid + '/saveError'] = null;
+      // 재편집도 교정쌍 갱신(2026-07-25) — 같은 sid 키라 최신 수정본으로 덮어씀(중복 없음)
+      if (dm.reply && guestFinal2 && String(dm.reply) !== String(guestFinal2)) {
+        fbSet('cs/learn/' + sid, {
+          before: dm.reply, after: guestFinal2, orig: String(dm.origMsg || ''),
+          lang: dm.lang || 'en', category: dm.category || null, stage: dm.stayStage || null,
+          src: 'learnmode-correct', ts: now
+        });
+      }
       n++;
     }
     if (Object.keys(patch).length) fbUpdate('cs/drafts', patch);
@@ -1127,7 +1147,7 @@ function makeManualDraft_(rid, text) {
   var inboxLike = { parsed: { message: text }, lang: guessLang_(text), bookingId: null, guest: null,
                     source: 'manual', emailReply: false, receivedAt: new Date().toISOString(), raw: { body: text } };
   var examples = retrieveExamples_(inboxLike);
-  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null, null, null)); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
+  var d = claudeDraft_(inboxLike, examples, '', stayStateBlock_(null, null, null, null), retrieveCorrections_(inboxLike), bannedPhrases_()); // 기존 초안 로직 재사용, 호출 1회. 예약 미상 → 현재 시각만 제공
   var manualId = 'manual_' + rid;
   fbSet('cs/drafts/' + manualId, {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1269,9 +1289,10 @@ function makeDraftFor_(msgId, inbox, allInbox, allDrafts) {
   var codeSent = checkinMailSent_(sirvoy, stage);         // (#4) HK 체크인 안내 발송 사실(읽기 전용)
   var examples = retrieveExamples_(inbox, stage);         // (#2) 동단계 예시 가중
   var corrections = retrieveCorrections_(inbox);          // (#1) 클라라 교정쌍 few-shot
+  var banned = bannedPhrases_();                          // 클라라 금칙 문구(프롬프트 금지+위반 ⚠️)
   var history = retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts); // (1) 같은 예약 이전 대화
-  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co, stage, codeSent), corrections); // 초안 호출 1회에 전부 통합
-  var flags = guardFlags_(stage, codeSent, d.reply);      // (#3) 금칙 셀프체크(표시용, 차단 아님)
+  var d = claudeDraft_(inbox, examples, history, stayStateBlock_(ci, co, stage, codeSent), corrections, banned); // 초안 호출 1회에 전부 통합
+  var flags = guardFlags_(stage, codeSent, d.reply, banned); // (#3) 금칙 셀프체크(표시용, 차단 아님)
 
   var rec = {
     reply: d.reply, replyKo: d.replyKo, category: d.category, confidence: d.confidence,
@@ -1491,21 +1512,37 @@ function checkinMailSent_(sirvoy, stage) {
 var GUARD_CODE_NOUN    = /(room (number|no\b)|access ?code|door ?code|객실 ?번호|도어 ?코드|비밀번호)/i;
 var GUARD_SEND_FUTURE  = /(will (be )?sen[dt]|will send|we('ll| will) send|going to send|sent (to you )?shortly|shortly|soon|곧 |보내드릴|보내 ?드릴게|발송해 ?드릴|전송해 ?드릴)/i;
 var GUARD_ARRIVAL_GUIDE = /(check[- ]?in is (from|at)|check[- ]?in starts|shuttle|bus 0?3|03번|셔틀|체크인은 15|오시는 ?길)/i;
-function guardFlags_(stage, codeSent, reply) {
+function guardFlags_(stage, codeSent, reply, banned) {
   var r = String(reply || ''), flags = [];
   if (GUARD_CODE_NOUN.test(r) && GUARD_SEND_FUTURE.test(r)) {
     if (stage === 'stay' || stage === 'checkout' || stage === 'post') flags.push('입실 이후 게스트에게 코드 발송을 다시 약속하는 문구');
     else if (codeSent === true) flags.push('체크인 안내 기발송인데 코드 발송을 새로 약속하는 문구');
   }
   if (stage === 'post' && GUARD_ARRIVAL_GUIDE.test(r)) flags.push('퇴실한 게스트에게 도착·체크인 안내 문구');
+  // 클라라 금칙 문구(2026-07-25): 등록 문구가 초안에 그대로 들어가면 표시. 서술형 금칙(예: "코드 재약속 금지")은
+  // 문자 일치가 안 되므로 프롬프트 금지가 담당 — 여기는 리터럴 문구용 안전망.
+  if (banned && banned.length) {
+    for (var i = 0; i < banned.length; i++) {
+      var b = String(banned[i] || '').trim();
+      if (b.length >= 2 && r.toLowerCase().indexOf(b.toLowerCase()) >= 0) flags.push('금칙 문구 포함: "' + b.slice(0, 30) + '"');
+    }
+  }
   return flags;
+}
+// 금칙 문구 목록 (cs/config/bannedPhrases — DESK에서 등록·삭제)
+function bannedPhrases_() {
+  var m = fbGet('cs/config/bannedPhrases') || {};
+  var out = [];
+  for (var k in m) if (m[k] && m[k].text) out.push(String(m[k].text));
+  return out;
 }
 
 // Claude API 호출 (UrlFetchApp). 키는 스크립트 속성 ANTHROPIC_KEY 에서만.
 //   history(있으면) = 같은 예약 이전 대화 트랜스크립트 → 프롬프트에 얹어 맥락 반영(호출 수 불변, 1회).
 //   state(있으면) = stayStateBlock_() 산출 [예약 상태] 블록 — 도착 전/입실/퇴실 단계 오답 방지(2026-07-25).
 //   corrections(있으면) = retrieveCorrections_() 교정쌍 — 초안의 반복 실수 억제(#1, 2026-07-25).
-function claudeDraft_(inbox, examples, history, state, corrections) {
+//   banned(있으면) = 클라라 금칙 문구 배열 — 프롬프트 수준 금지(2026-07-25).
+function claudeDraft_(inbox, examples, history, state, corrections, banned) {
   var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
   if (!key) throw new Error('스크립트 속성 ANTHROPIC_KEY 미설정');
 
@@ -1521,9 +1558,15 @@ function claudeDraft_(inbox, examples, history, state, corrections) {
               '\n클라라 수정본(정답): ' + String(corrections[ci2].after || '').slice(0, 600) + '\n---\n';
     corr += '\n';
   }
+  var ban = '';
+  if (banned && banned.length) {
+    ban = '[클라라 금칙] 아래는 클라라가 절대 쓰지 말라고 등록한 표현·내용입니다. 문구 그대로든 비슷한 취지로든 답변(reply)에 포함하지 마세요. [과거 응대 예시]에 나오더라도 금칙이 우선입니다:\n';
+    for (var bi = 0; bi < banned.length; bi++) ban += '- ' + String(banned[bi]).slice(0, 200) + '\n';
+    ban += '\n';
+  }
   var message = (inbox.parsed && inbox.parsed.message) || (inbox.raw && inbox.raw.body) || '';
   var hist = history ? ('[이 예약의 이전 대화] (시간순, 이미 안내한 내용 반복 금지)\n' + history + '\n\n') : '';
-  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + corr + hist + (state || '') +
+  var user = '[과거 응대 예시]\n' + (ex || '(예시 없음)\n') + '\n' + corr + hist + (state || '') + ban +
              '[이번 게스트 메시지] (언어=' + (inbox.lang || 'en') + ')\n' + message +
              '\n\n위 지침대로 JSON만 출력하세요.';
 
@@ -1588,7 +1631,7 @@ function diagPeekTasks(msgId) {
     var dci = (sv && sv.checkinDate) || inbox.checkinDate || null, dco = (sv && sv.checkoutDate) || inbox.checkoutDate || null;
     var dstage = stayStage_(todayKst_(), dci, dco);
     var d = claudeDraft_(inbox, retrieveExamples_(inbox, dstage), retrieveThreadHistory_(msgId, inbox, allInbox, allDrafts),
-                         stayStateBlock_(dci, dco, dstage, checkinMailSent_(sv, dstage)), retrieveCorrections_(inbox));
+                         stayStateBlock_(dci, dco, dstage, checkinMailSent_(sv, dstage)), retrieveCorrections_(inbox), bannedPhrases_());
     Logger.log('파싱된 tasks[] = ' + JSON.stringify(d.tasks || []));
     Logger.log(d.tasks && d.tasks.length ? '→ 신규 파이프라인 정상(태스크 추출됨).' : '→ 이 메시지엔 처리할 태스크 없음(단순 정보 문의면 정상). 다른 "나중에~"류 메시지로 재확인 권장.');
   } catch (e) { Logger.log('diagPeekTasks 실패: ' + e); }
