@@ -109,18 +109,24 @@ function urlfetchCooldownActive_() {
   return false;
 }
 // 모든 urlfetch 공통 래퍼: 소진 감지 시 쿨다운 기록 + 같은 run 이후 fetch 차단. 그 외엔 그대로 위임.
+// 2026-07-25: 일시 네트워크 오류(Address unavailable 등 — GAS↔asia-southeast1 간헐 발생)는 최대 2회
+// 재시도(1.2s/2.4s 백오프). 1분 폴링은 다음 run이 자연 재시도지만 1회성 수동 함수가 그대로 죽던 것 방지.
+var CS_TRANSIENT_RE = /(address unavailable|dns error|unknown host|connection reset|connect timed out|timed out|temporarily unavailable)/i;
 function csFetch_(url, params) {
   if (_urlfetchStop) throw new Error('urlfetch cooldown(run-local) — fetch 차단'); // 감지 후 재호출 방지(즉시 종료)
-  // 계측만(상한·차단 없음): 실제 fetch 시도마다 일일 카운터 +1 + 이번 run 카운트 (short-circuit분은 미집계)
   var mp = PropertiesService.getScriptProperties();
   var mk = fetchUsedKey_();
-  mp.setProperty(mk, String(incCounter_(mp.getProperty(mk))));
-  _fetchRunCount++;
-  try {
-    return UrlFetchApp.fetch(url, params);
-  } catch (e) {
-    if (isUrlfetchExhausted_(e)) { enterUrlfetchCooldown_(); _urlfetchStop = true; }
-    throw e; // 기존 호출부 에러 처리(로그 등) 유지
+  for (var attempt = 0; ; attempt++) {
+    // 계측만(상한·차단 없음): 실제 fetch 시도마다 일일 카운터 +1 + 이번 run 카운트 (short-circuit분은 미집계)
+    mp.setProperty(mk, String(incCounter_(mp.getProperty(mk))));
+    _fetchRunCount++;
+    try {
+      return UrlFetchApp.fetch(url, params);
+    } catch (e) {
+      if (isUrlfetchExhausted_(e)) { enterUrlfetchCooldown_(); _urlfetchStop = true; throw e; }
+      if (attempt < 2 && CS_TRANSIENT_RE.test(String(e))) { Utilities.sleep(1200 * (attempt + 1)); continue; }
+      throw e; // 기존 호출부 에러 처리(로그 등) 유지
+    }
   }
 }
 
