@@ -534,6 +534,7 @@ function answerBody(id,d){
       '<button class="b go" onclick="retrySave(\''+id+'\')">재시도</button></div>';
   } else if(st==='error'){
     actions='<div class="err-row"><div class="errmsg">'+esc(d.errorMsg||'발송 오류')+'</div>'+
+      '<button class="b skip" onclick="dismissDraft(\''+id+'\',\'manual-sent\')" title="OTA·파트너센트럴 등에서 직접 발송을 마친 건 치우기 (삭제 아님·데이터 보존)">발송함 · 치우기</button>'+
       '<button class="b go" onclick="retryDraft(\''+id+'\')">재시도</button></div>';
   } else {
     actions='<div class="readonly-note">'+(st==='approved'?(learnMode?'승인됨 — 학습 시트에 저장 중(발송 없음)':'승인됨 — GAS가 원 스레드에 발송합니다'):'처리 중…')+'</div>';
@@ -972,10 +973,11 @@ function retryDraft(id){
 // dismissReason 저장 → 추천 없이 답불요 처리된 건 = 답불요 감지 누락 신호(추후 감지 개선 근거).
 function dismissDraft(id,reason){
   const d=drafts[id];
-  if(!d || ((d.status||'pending')!=='pending' && d.status!=='notice')){ toast('대기 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림 카드는 치우기 허용)
-  const noReply=(reason==='no-reply');
-  update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissReason:noReply?'no-reply':'handled',dismissedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(noReply?'답불요로 치움':'지난 문의로 치움'); })
+  const st=d?(d.status||'pending'):'';
+  if(!d || (st!=='pending' && st!=='notice' && st!=='error')){ toast('대기·발송 실패 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림·발송 실패 카드는 치우기 허용)
+  const manualSent=(reason==='manual-sent'); const noReply=(reason==='no-reply');
+  update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissReason:manualSent?'manual-sent':(noReply?'no-reply':'handled'),dismissedAt:new Date().toISOString()})
+    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(manualSent?'발송함으로 치움':(noReply?'답불요로 치움':'지난 문의로 치움')); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
 }
 // (D) 질문 분류 자산화: 대상 draft들을 category별로 그룹핑 → {category, count, representatives[]}.
