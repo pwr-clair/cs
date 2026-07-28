@@ -253,6 +253,13 @@ function gmReplyThread_(threadId, body) {
   return true;
 }
 
+// 지정 주소로 빈 제목 발송(익스피디아 예약 별칭 등 — 원 스레드 없이 주소만으로). 예산 가드 경유, 예산 없으면 false.
+function gmSendToAddress_(to, body) {
+  if (!budgetGate_('reply')) return false;
+  GmailApp.sendEmail(to, '', body);
+  return true;
+}
+
 // autoSend: pending & 조건 충족 → approved (같은 run 발송 워커가 발송)
 function autoApprovePass_() {
   if (learnModeOn_()) return; // 학습모드: 자동 승인 비활성 — 수동 승인만이 학습신호(자가흉내 저장 방지)
@@ -294,8 +301,23 @@ function sendApprovedDrafts() {
     var chk = fbGet('cs/drafts/' + id);
     if (!chk || chk.status !== 'sending') continue;              // 잠금 확인 실패 → 양보
 
-    if (fresh.emailReply === false) { // 익스피디아 등: 이메일 회신 미지원
-      fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: '익스피디아는 이메일 회신 미지원 — 파트너센트럴에서 초안 복붙 발송' });
+    if (fresh.emailReply === false) { // 익스피디아: 이메일 회신 미지원 → 예약 별칭 발송(2026-07-26 클라라 결정, 07-28 탑재)
+      var alias = (fresh.channel === 'expedia') ? expediaAliasFor_(fresh.guest) : null;
+      if (!alias) { // 별칭 못 찾음(비익스피디아 포함) → 기존 복붙 안내 유지
+        fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: '익스피디아는 이메일 회신 미지원 — 파트너센트럴에서 초안 복붙 발송' });
+        continue;
+      }
+      var aliasReply = resolveGuestFinal_(fresh) || fresh.finalReply || fresh.reply || '';
+      if (!aliasReply) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'finalReply 비어있음' }); continue; }
+      try {
+        if (!gmSendToAddress_(alias, aliasReply)) { fbUpdate('cs/drafts/' + id, { status: 'approved', sendingAt: null }); break; } // 예산 없음 → 되돌림, 다음 run
+        fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), sentVia: 'expedia-alias', sentTo: alias, errorMsg: null });
+        learnFromSend_(id, fresh, aliasReply);
+        Logger.log('발송 완료(익스피디아 별칭) ' + id + ' → ' + alias);
+      } catch (e) {
+        fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: String(e).slice(0, 200) });
+        Logger.log('발송 실패(익스피디아 별칭) ' + id + ': ' + e);
+      }
       continue;
     }
     var threadId = fresh.threadId || (fbGet('cs/inbox/' + id) || {}).threadId;
@@ -1850,6 +1872,33 @@ function findSirvoy_(bookingId) {
                checkinDate: (b.checkinDate || null), checkoutDate: (b.checkoutDate || null) };
   }
   return null; // 매칭 실패 → null 허용 (폴백 미구현, Fable 지시)
+}
+
+// ---- 익스피디아 예약 별칭 발송 (2026-07-26 클라라 결정 · 07-28 탑재) ----
+//   Sirvoy는 익스피디아 메시징 미지원 → 예약 별칭(@m.expediapartnercentral.com)으로 이메일 발송.
+//   근거: HK 입실안내가 같은 별칭(guestEmail)으로 도달해 온 실적. app/pendingBookings 읽기 전용(§3 쓰기 금지 준수).
+// 이름 정규화 키(순수): 구두점 제거 → 소문자 → 토큰 정렬. "LAI, POUMEI" == "POUMEI LAI" (쉼표·어순·대소문자·다중 공백 무시)
+function nameKey_(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .replace(/[^a-z0-9À-ɏ가-힣぀-ヿ一-鿿\s]/g, ' ') // 쉼표·마침표 등 제거(악센트 라틴·한중일 유지)
+    .split(/\s+/).filter(function (w) { return !!w; }).sort().join(' ');
+}
+// 순수(테스트용): pending 맵에서 이름 어순 무시 대조로 별칭 회수. cutoffYmd(=오늘-2일) 이전 체크아웃 제외.
+function expediaAliasPick_(pending, guestName, cutoffYmd) {
+  var key = nameKey_(guestName);
+  if (!key) return null;
+  for (var k in pending) {
+    var b = pending[k]; if (!b || b.cancelled) continue;
+    if (b.checkoutDate && cutoffYmd && b.checkoutDate < cutoffYmd) continue; // 체크아웃 2일 경과 — 옛 예약 오매칭 방지
+    var em = String(b.guestEmail || '');
+    if (em.toLowerCase().indexOf('@m.expediapartnercentral.com') < 0) continue; // 익스피디아 별칭만
+    if (nameKey_(b.guest) === key) return em;
+  }
+  return null;
+}
+function expediaAliasFor_(guestName) {
+  var cutoff = Utilities.formatDate(new Date(Date.now() - 2 * 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+  return expediaAliasPick_(loadPending_(), guestName, cutoff); // loadPending_ = 기존 run-local 캐시(읽기 전용)
 }
 
 // ---- (3) 텔레그램 ----
