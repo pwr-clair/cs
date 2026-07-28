@@ -237,12 +237,19 @@ function autoApproveDecision_(on, confidence) {
 // 순수(테스트용): 학습 분기. 수정 발송 → learn(초안·수정본 쌍), 무수정 → corpus(정답).
 function learnTarget_(edited) { return edited ? 'learn' : 'corpus'; }
 
-// 원 Gmail 스레드에 reply (새 메일 작성 금지). 예산 가드 경유. 예산 없으면 false.
+// 원 Gmail 스레드의 회신 주소로 빈 제목 발송. 예산 가드 경유. 예산 없으면 false.
+// th.reply()는 제목을 "Re: 원제목"으로 강제 상속하는데, OTA 채팅이 그 제목을 본문 첫 줄로 노출
+// (2026-07-26 클라라 신고, KIM GITAE 건) → HK waMirror에서 검증된 빈 제목 새 메일 방식으로 교체.
+// 회신 주소(부킹 중계 주소)가 대화를 식별하므로 제목 없이도 같은 채팅으로 들어간다.
 function gmReplyThread_(threadId, body) {
   if (!budgetGate_('reply')) return false;
   var th = GmailApp.getThreadById(threadId);
   if (!th) throw new Error('스레드 못 찾음: ' + threadId);
-  th.reply(body);
+  var msgs = th.getMessages();
+  var last = msgs[msgs.length - 1];
+  var to = (last.getReplyTo() || last.getFrom() || '').trim();
+  if (!to) throw new Error('회신 주소 없음: ' + threadId);
+  GmailApp.sendEmail(to, '', body);
   return true;
 }
 
