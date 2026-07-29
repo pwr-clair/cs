@@ -901,7 +901,7 @@ function renderReview(){
     let state='';
     if(q.draftError) state='<span class="status error">'+esc(q.draftError)+'</span>';
     else if(q.status==='approved'&&!q.drafted) state='<span class="status approved"><span class="spinner"></span>초안 생성 대기(5분 내)</span>';
-    else if(q.drafted) state='<span class="status approved">초안 생성됨 → 대기 탭에서 검토</span>';
+    else if(q.drafted) state='<span class="status approved">초안 생성됨 → 자동 발송 · 보냄 탭에서 확인</span>'; // 2026-07-20 이중 승인 제거 반영(대기 미경유, 실패 시에만 대기 노출)
     else if(q.status==='skipped') state='<span class="status">건너뜀</span>';
     const btns=q.status==='proposed'
       ?'<div class="btns"><button class="b skip" onclick="skipReview(\''+k+'\')">건너뜀</button>'+
