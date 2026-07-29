@@ -379,17 +379,28 @@ function langToIso_(l) { return /^(en|ko|ja|zh|ru|th)$/.test(String(l||'').toLow
 // 단축 치환(2026-07-20 클라라): 편집본/초안의 {가이드}·{guide} → 가이드 URL. 번역 전·후 모두 통과하도록
 // resolveGuestFinal_ 의 모든 출구에서 적용(번역기가 {가이드}→{Guide}로 바꿔도 잡힘).
 function subShortcuts_(s) { return String(s == null ? '' : s).replace(/\{\s*(가이드|guide)\s*\}/gi, 'https://pwr-guide.online'); }
+// 이모지 제거(2026-07-29 클라라) — OTA 메시지·메일 경로에서 전부 깨져서 도착. 생성 시(callClaude_)와 발송본(resolveGuestFinal_) 양쪽에서 적용.
+// ponytail: 서로게이트 페어 전체 제거 = 非BMP 문자 일괄 제거(우리 답변엔 희귀 한자 안 씀). 정밀 필요해지면 유니코드 속성 이스케이프로 교체.
+function stripEmoji_(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')                          // 얼굴·비행기·지구 등 대부분(非BMP)
+    .replace(/[←-⇿⌀-➿⬀-⯿〰〽㊗㊙©®]/g, '') // 경고·체크·하트·화살표 등 BMP 기호
+    .replace(/[︀-️‍⃣]/g, '')                             // 변이 선택자·ZWJ·키캡
+    .replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// 발송본 공통 마감 = 링크 단축어 치환 + 이모지 제거(resolveGuestFinal_ 전 출구에서 통과).
+function outText_(s) { return stripEmoji_(subShortcuts_(s)); }
 function resolveGuestFinal_(d) {
   var editLang = d.claraFinalLang || (String(d.lang||'').toLowerCase() === 'en' ? 'en' : 'ko');
-  var claraFinal = subShortcuts_(String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '')); // 번역 전 치환
+  var claraFinal = outText_(String(d.claraFinal || d.finalReply || d.replyKo || d.reply || '')); // 번역 전 치환
   var guestLang = String(d.lang || 'en').toLowerCase();
   if (guestLang === editLang) return claraFinal;          // ko게스트+ko편집 / en게스트+en편집 → 그대로
-  if (!d.editedByClara) return subShortcuts_(d.reply || claraFinal); // 미편집 → Claude 원문(이미 게스트 언어, 번역 불필요)
+  if (!d.editedByClara) return outText_(d.reply || claraFinal); // 미편집 → Claude 원문(이미 게스트 언어, 번역 불필요)
   var iso = langToIso_(guestLang);
   var target = iso || 'en';                                // (4) 타깃 코드 불명(eu 등) → 영어로 발송(원문 폴백 아님)
   if (target === editLang) return claraFinal;              // 영어권+영어편집 등
-  try { return subShortcuts_(LanguageApp.translate(claraFinal, editLang, target)); } // 무료 번역(불명이면 en) — 번역 후 재치환
-  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + target + '): ' + e); return subShortcuts_(d.reply || claraFinal); }
+  try { return outText_(LanguageApp.translate(claraFinal, editLang, target)); } // 무료 번역(불명이면 en) — 번역 후 재치환
+  catch (e) { Logger.log('LanguageApp 번역 실패(' + editLang + '→' + target + '): ' + e); return outText_(d.reply || claraFinal); }
 }
 
 function saveApprovedToSheet_() {
@@ -1057,6 +1068,7 @@ var CLARA_SYSTEM =
   '· 하우스룰: 전면 금연(위반 시 특별 청소비), 최대 2인, 반려동물 불가, 파티·소음 금지, 예고 없는 방문자에게 문 열지 말 것(저희 팀은 사전 안내 없이 방문하지 않음).\n' +
   '· 도어코드: 개인정보·안전을 위해 객실 번호·도어코드는 도착 당일 예약 플랫폼 메시지로만 발송.\n' +
   '· 문의: WhatsApp +82 10-8227-2845, LINE·WeChat ID pwresi, 지원 시간 09:00–21:00 KST(그 외 시간대 답변 지연 가능).\n' +
+  '이모지·이모티콘을 절대 사용하지 마세요(reply·replyKo 모두) — OTA 메시지에서 깨진 문자로 도착합니다. 감정 표현은 말로만 하세요. ' +
   '게스트 언어가 영어가 아니면 reply 끝에 한 줄 번역 면책 문구를 그 게스트 언어로 덧붙이세요. ' +
   '[안내 이미지 링크] 관련된 문의일 때만 아래 URL을 답변(reply)에 플레인텍스트 전체 URL로 자연스럽게 포함하세요(마크다운·대괄호 금지, 강제 삽입 금지, 관련 없으면 넣지 말 것):\n' +
   '- 셔틀/오시는길/공항 이동 문의: https://pwr-clair.github.io/cs/assets/images/Map-shuttle-overview.jpeg (공항↔숙소 전체 경로), https://pwr-clair.github.io/cs/assets/images/map-to-airport.png (숙소→버스정류장 도보)\n' +
@@ -1679,7 +1691,7 @@ function claudeDraft_(inbox, examples, history, state, corrections, banned, know
   }
   if (!obj) throw new Error('Claude 응답 JSON 파싱 실패(재시도 포함 2회): ' + text.slice(0, 200));
   return {
-    reply: obj.reply || '', replyKo: obj.replyKo || '',
+    reply: stripEmoji_(obj.reply || ''), replyKo: stripEmoji_(obj.replyKo || ''), // 이모지 금지(2026-07-29) — 모델이 넣어도 여기서 제거
     category: obj.category || '기타',
     confidence: (typeof obj.confidence === 'number' ? obj.confidence : null),
     tasks: sanitizeTasks_(obj.tasks), // (4) 업무 후보 배열(없으면 [])

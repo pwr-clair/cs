@@ -403,7 +403,7 @@ onAuthStateChanged(auth, (user)=>{
 
 function startListeners(){
   const permErr = (path)=> (e)=>{ toast('읽기 권한 오류: '+path+' — Firebase 규칙 확인'); };
-  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; reconcileOptimistic(); if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
+  onValue(ref(db,'cs/drafts'), snap=>{ drafts = snap.exists()?(snap.val()||{}):{}; reconcileOptimistic(); hydrateLocalEdits(); if(isLoggedIn){ renderWait(); renderSent(); } }, permErr('cs/drafts'));
   onValue(ref(db,'cs/config/autoSend'), snap=>{ auto = snap.exists()? !!snap.val() : false; if(isLoggedIn)renderAuto(); }, permErr('cs/config/autoSend'));
   onValue(ref(db,'cs/config/learnMode'), snap=>{ learnMode = snap.exists()? (snap.val()!==false) : true; if(isLoggedIn){ renderWait(); renderSent(); renderAuto(); } }, permErr('cs/config/learnMode'));
   onValue(ref(db,'cs/config/saveHookUrl'), snap=>{ saveHookUrl = snap.exists()? String(snap.val()||'') : ''; }, permErr('cs/config/saveHookUrl'));
@@ -421,6 +421,12 @@ function renderAll(){ renderWait(); renderSent(); renderTasks(); renderSugg(); r
 // (2) 낙관적 표시 정리: 실패(saveError) 도착·삭제 시 낙관집합에서 제거 → 카드가 실패/실상태로 되돌아감.
 function reconcileOptimistic(){
   optimisticSaved.forEach(id=>{ const d=drafts[id]; if(!d || d.saveError) optimisticSaved.delete(id); });
+}
+// 새로고침 복원(2026-07-29): [저장]한 편집본·말투 점수를 draft 노드에서 되살림. 승인 시 claraDraftEdit=null 로 정리되므로 부활 없음.
+function hydrateLocalEdits(){
+  Object.keys(drafts).forEach(id=>{ const d=drafts[id]; if(!d || (d.status||'pending')!=='pending') return;
+    if(committedEdit[id]==null && d.claraDraftEdit!=null) committedEdit[id]=String(d.claraDraftEdit);
+    if(selfScores[id]==null && d.claraToneScore) selfScores[id]=d.claraToneScore; });
 }
 // 카드가 '저장됨'으로 보여야 하나: 실제 saved || (낙관 승인 && approved && 실패없음)
 function isSavedView(id,d){ return d && (d.status==='saved' || (optimisticSaved.has(id) && d.status==='approved' && !d.saveError)); }
@@ -445,7 +451,8 @@ function toneScoreRow(id){
   const note = cur ? '<span class="tnote">'+cur+'/5</span>' : '<span class="tnote">미평가 — 탭해서 점수</span>';
   return '<div class="tone"><span class="tlbl">말투 일치 (내 평가)</span><div class="tcells">'+cells+'</div>'+note+'</div>';
 }
-function setTone(id,n){ selfScores[id] = (selfScores[id]===n ? 0 : n); renderWait(); } // 같은 칸 재탭 = 해제
+function setTone(id,n){ selfScores[id] = (selfScores[id]===n ? 0 : n); renderWait();  // 같은 칸 재탭 = 해제
+  update(ref(db,'cs/drafts/'+id),{claraToneScore:selfScores[id]||null}).catch(()=>{}); } // 새로고침 복원용(승인 시 재기록)
 
 // ── 예약 단위 그룹핑 (같은 bookingId, 없으면 threadId, 둘 다 없으면 msgId 단건) ──
 function groupKey(d){ return (d && d.bookingId && ('b'+d.bookingId)) || (d && d.threadId && ('t'+d.threadId)) || null; }
@@ -945,7 +952,7 @@ function approveDraft(id){
   // 편집 언어는 실제 확정 텍스트로 판정(2026-07-20): 영어권 게스트도 한국어로 수정 가능 — 한글 있으면 ko로
   // 마킹돼 GAS resolveGuestFinal_ 가 발송 시 게스트 언어로 자동 번역(영어권=영번역). 기존 비영어권 경로와 동일.
   const finalLang=/[가-힣]/.test(final)?'ko':'en';
-  update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:finalLang,editedByClara:edited,claraToneScore:score,saveError:null,approvedAt:new Date().toISOString()})
+  update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:finalLang,editedByClara:edited,claraToneScore:score,claraDraftEdit:null,saveError:null,approvedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; delete committedEdit[id]; delete selfScores[id];
       if(learnMode){ optimisticSaved.add(id); triggerImmediateSave(id); renderWait(); renderSent(); } // (2) 즉시 '저장됨' 표시 + 백그라운드 저장
       toast(learnMode?(edited?'수정본 저장됨(학습)':'저장됨(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
@@ -1020,6 +1027,8 @@ function editOrSave(id){
   if(editingIds.has(id)){ // [저장]
     committedEdit[id]=(edits[id]!=null)?edits[id]:(committedEdit[id]!=null?committedEdit[id]:editSourceText(drafts[id]));
     editingIds.delete(id); delete edits[id];
+    // 2026-07-29: 확정 편집본을 draft 노드에도 기록 — 종전 메모리 전용이라 새로고침 시 AI 초안으로 되돌아갔음.
+    update(ref(db,'cs/drafts/'+id),{claraDraftEdit:committedEdit[id]}).catch(e=>toast('편집 저장 실패: 쓰기 권한 확인'));
     toast('편집 확정 — [승인]을 누르면 이 답변으로 학습');
   } else { // [수정]
     editingIds.add(id);

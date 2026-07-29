@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "guide-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "exec python3 -m http.server \"$PORT\" --directory /private/tmp/claude-502/-Users-ClairCho-Documents-Csteam/9330b46b-335f-49f8-a912-733f05c9a2ff/scratchpad/guide-repo"],
+      "autoPort": true
+    },
+    {
+      "name": "cs-desk",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8893", "--directory", "/Users/ClairCho/Documents/Csteam"],
+      "port": 8893
+    },
+    {
+      "name": "status-board-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8931", "--directory", "/private/tmp/claude-502/-Users-ClairCho-Documents-Csteam/ff7548fc-67ed-4bbb-b156-b367fa962fcc/scratchpad/pwr-docs"],
+      "port": 8931
+    }
+  ]
+}
