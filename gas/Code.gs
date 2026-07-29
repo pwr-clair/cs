@@ -424,7 +424,7 @@ function saveApprovedToSheet_() {
       var dd = targets[k][1];
       var q = String(dd.origMsg || '').trim();
       // 코퍼스 clara_reply = 클라라가 확정한 편집본(비영어권=한국어, 영어권=영어) — 기계번역 아닌 클라라 원문.
-      var claraFinal = String(dd.claraFinal || dd.finalReply || dd.replyKo || dd.reply || '').trim();
+      var claraFinal = stripEmoji_(dd.claraFinal || dd.finalReply || dd.replyKo || dd.reply || ''); // 코퍼스에 이모지 유입 차단(few-shot 재확산 방지)
       var lang = dd.lang || guessLang_(claraFinal || q); // 상황(게스트) 언어 — 검색용
       var cat = dd.category || '';
       var score = (dd.claraToneScore != null && dd.claraToneScore !== 0) ? dd.claraToneScore : ''; // 미평가는 빈칸
@@ -501,7 +501,7 @@ function correctSavedRows_() {
     for (var k = 0; k < targets.length; k++) {
       var sid = targets[k][0], dm = targets[k][1];
       var q = String(dm.origMsg || '').trim();
-      var claraFinal = String(dm.claraFinal || dm.replyKo || dm.reply || '').trim();
+      var claraFinal = stripEmoji_(dm.claraFinal || dm.replyKo || dm.reply || ''); // 정정 행도 이모지 제거
       var lang = dm.lang || guessLang_(claraFinal || q);
       var cat = dm.category || '';
       var score = (dm.claraToneScore != null && dm.claraToneScore !== 0) ? dm.claraToneScore : '';
