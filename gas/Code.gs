@@ -341,6 +341,7 @@ function sendApprovedDrafts() {
 // 학습 루프: 무수정 → cs/corpus(정답 적재), 수정 → cs/learn(초안·수정본 쌍)
 function learnFromSend_(id, d, finalReply) {
   try {
+    if (d.origin === 'review') return; // 후기 고정 문구는 학습 제외 — 코퍼스에 답변 예시로 오염되는 것 방지(2026-07-29)
     var inbox = fbGet('cs/inbox/' + id) || {};
     var orig = (inbox.parsed && inbox.parsed.message) || d.origMsg || '';
     var lang = d.lang || 'en';
@@ -1275,20 +1276,27 @@ function updateGuestScore_(inbox, sentiment, sirvoy) {
 // ②초안(5분 슬롯): 후기 탭에서 승인된 건 → Claude 1회로 후기 요청 초안 → cs/drafts에 곧장 approved 적재
 //   (2026-07-20 클라라: 대기 탭 2차 승인 제거 — 후기 탭 승인 = 최종 승인, 발송 워커가 바로 발송.
 //    대기 탭에는 표시 안 함(에러 시에만 노출), 발송되면 보냄 탭에서 확인. 발송 경로는 기존 워커 재사용.)
+// 순수(테스트용): 후기 후보 판정 (2026-07-29 클라라 기준 강화 — 긍정 1회는 리스키)
+//   체크아웃 1일 이상 경과(어제 이하) + 7일 이내(옛 게스트에게 뒷북 요청 방지) + 불만 0 + 긍정 2 이상.
+function reviewEligible_(s, yesterday, windowStart) {
+  if (!s || !s.checkoutDate) return false;
+  if (s.checkoutDate > yesterday || s.checkoutDate < windowStart) return false;
+  if ((s.negCount || 0) > 0) return false;
+  return (s.posCount || 0) >= 2;
+}
 function reviewQueueWorker_() {
   var p = PropertiesService.getScriptProperties();
   var today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   if (p.getProperty('CS_REVIEW_DATE') === today) return; // 하루 1회(이후 run은 urlfetch 0회)
   var yesterday = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+  var windowStart = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
   var scores = fbGet('cs/guestScore') || {};
   var queue = fbGet('cs/reviewQueue') || {};
   var made = 0;
   for (var key in scores) {
     var s = scores[key]; if (!s) continue;
-    if (s.checkoutDate !== yesterday) continue;  // 체크아웃 익일 대상
     if (queue[key]) continue;                    // 멱등
-    if ((s.negCount || 0) > 0) continue;         // 불만 이력 게스트 제외
-    if ((s.posCount || 0) < 1) continue;         // 긍정 신호 필요
+    if (!reviewEligible_(s, yesterday, windowStart)) continue; // 체크아웃 1일+·7일 내·불만 0·긍정 2+
     fbSet('cs/reviewQueue/' + key, {
       status: 'proposed', guest: s.guest || null, bookingId: key, lang: s.lang || 'en',
       channel: s.channel || null, room: s.room || null, threadId: s.threadId || null,
@@ -1300,6 +1308,37 @@ function reviewQueueWorker_() {
   p.setProperty('CS_REVIEW_DATE', today);
   if (made) Logger.log('후기 후보 선별: ' + made + '건 (체크아웃 ' + yesterday + ')');
 }
+// ── 후기 요청 고정 문구 (2026-07-29 클라라 확정 — Claude 생성 폐지: 검수 없는 생성문 발송 리스크 제거) ──
+//   한국어로 대화한 게스트=한국어, 그 외 전 언어=영어. 원문의 ⭐·→ 는 발송단 이모지 제거(outText_)에서
+//   깨지거나 삭제되므로 [ ]·> 로 대체해 저장(내용 동일).
+var REVIEW_MSG_EN =
+  'Dear guest,\n\n' +
+  'Thank you so much for staying at Paradise Walk Residence. We hope you had a relaxing trip back home!\n\n' +
+  'As a newly opened property, we always want to improve. If anything was uncomfortable, please reply here — we would love to make it better for your next visit.\n\n' +
+  'If you were happy with your stay, would you take a moment to leave us a 10-score review?\n' +
+  'It helps our small business so much!\n\n' +
+  '[ How to leave a review ]\n' +
+  'Bookings > select your booking > Review your stay\n' +
+  '*The booking platform will also send you a review invitation by email — either way works!\n\n' +
+  'It was a pleasure having you.\n' +
+  'Safe travels, and we hope to welcome you back!\n\n' +
+  'Warm regards,\n' +
+  'Paradise Walk Residence';
+var REVIEW_MSG_KO =
+  '고객님께,\n\n' +
+  '저희 숙소를 선택해 주셔서 진심으로 감사드립니다.\n' +
+  '혹시 머무신 경험이 만족스러우셨다면 잠시 시간 내어 10점짜리 후기를 부탁드려도 될까요? 저희 숙소는 최근 운영을 시작하여 예약 플랫폼 내 후기가 많이 부족한 상황이기에 간단히 남겨주시는 리뷰라도 정말 큰 힘이 됩니다!\n\n' +
+  '[ 후기 남기는 방법 ]\n' +
+  '예약 내역 > 숙소 선택 > 숙박 후기 남기기\n' +
+  '*예약하신 플랫폼에서 이메일로도 후기 안내가 갑니다. 어느 쪽이든 괜찮습니다!\n\n' +
+  '만약 운영상의 미흡함으로 인해 불편하셨던 점이 있었다면 이 메시지로 회신을 부탁드리겠습니다. 고객님의 피드백을 무겁게 수용하여 더욱 좋은 모습으로 거듭나겠습니다.\n\n' +
+  '저희 숙소를 선택해주셔서 다시 한 번 감사드립니다. 다음 번에 또 좋은 기회로 고객님을 다시 모실 수 있게 되기를 바라겠습니다.\n\n' +
+  '감사합니다.';
+// 순수(테스트용): 대화 언어 → 발송 문구. 한국어만 한국어, 나머지 전부 영어.
+function reviewTemplateFor_(lang) {
+  return String(lang || '').toLowerCase() === 'ko'
+    ? { lang: 'ko', text: REVIEW_MSG_KO } : { lang: 'en', text: REVIEW_MSG_EN };
+}
 function reviewDraftWorker_() {
   if (learnModeOn_()) return; // 학습모드(발송 없음)엔 후기요청 초안 미생성 — 대기 탭 소음 방지(2026-07-20 클라라).
                               // 승인된 후보는 reviewQueue에 남아 8월 실발송 전환 시 자동으로 초안 생성 재개.
@@ -1308,23 +1347,17 @@ function reviewDraftWorker_() {
     var q = queue[key];
     if (!q || q.status !== 'approved' || q.drafted) continue;
     try {
-      var inboxLike = {
-        parsed: { message: '[시스템] 어제 체크아웃한 게스트에게 보낼 짧은 후기 요청 메시지를 작성하세요. 게스트 언어=' + (q.lang || 'en') + '. 숙박에 대한 감사 + 후기가 큰 힘이 된다는 부담 없는 두세 문장. 새 정보 안내·질문 금지.' },
-        lang: q.lang || 'en', bookingId: q.bookingId || null, guest: q.guest || null,
-        source: q.channel || 'booking', emailReply: true, receivedAt: new Date().toISOString(),
-        raw: { body: '' }, threadId: q.threadId || null, replyTo: null
-      };
-      var d = claudeDraft_(inboxLike, retrieveExamples_(inboxLike), '');
+      // 고정 문구 발송(Claude 미사용) — lang·finalReply를 문구 언어로 맞춰 발송 워커의 번역 경로를 타지 않게 함.
+      var tpl = reviewTemplateFor_(q.lang);
       var draftId = 'review_' + key;
       fbSet('cs/drafts/' + draftId, {
-        reply: d.reply, replyKo: d.replyKo, category: '후기요청', confidence: d.confidence,
+        reply: tpl.text, replyKo: null, finalReply: tpl.text, category: '후기요청', template: 'fixed-v1',
         status: 'approved', autoApproved: true, approvedAt: new Date().toISOString(), // 후기 탭 승인 = 최종 승인
-        editedReply: null, lang: q.lang || 'en', guest: q.guest || null,
+        editedReply: null, editedByClara: false, lang: tpl.lang, guest: q.guest || null,
         bookingId: q.bookingId || null, channel: q.channel || null, origin: 'review',
         threadId: q.threadId || null, emailReply: !!q.threadId, room: q.room || null,
         origMsg: '(후기 요청 — ' + (q.guest || '게스트') + ', ' + (q.checkoutDate || '') + ' 체크아웃)',
-        receivedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
-        model: CLAUDE_MODEL
+        receivedAt: new Date().toISOString(), createdAt: new Date().toISOString()
       });
       fbUpdate('cs/reviewQueue/' + key, { drafted: true, draftId: draftId, draftedAt: new Date().toISOString() });
       Logger.log('후기 요청 초안 생성: ' + key);
