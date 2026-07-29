@@ -1128,9 +1128,11 @@ function processInboxToDrafts() {
       drafts[id] = true; continue;         // made 미집계(Claude 배치 한도와 무관한 저비용 건)
     }
     var msgText = (rec.parsed && rec.parsed.message) || '';
-    if (msgText && isDuplicateOfManual_(msgText, handled)) { // 즉석 처리한 것과 동일 → 대기에 안 띄움(Claude 호출 없음)
+    var dupOf = msgText ? manualDupKey_(msgText, handled) : '';
+    if (dupOf) {                           // 즉석 처리한 것과 동일 → 대기에 안 띄움(Claude 호출 없음)
+      linkManualToEmail_(dupOf, id, rec);  // 즉석 카드에 게스트·예약·스레드 역주입(미상 방치·발송 불가 해소)
       fbSet('cs/drafts/' + id, {
-        status: 'dismissed', handledManual: true, origin: 'polling-dup',
+        status: 'dismissed', handledManual: true, origin: 'polling-dup', linkedManualId: dupOf,
         guest: rec.guest || null, bookingId: rec.bookingId || null, channel: rec.source || null,
         origMsg: msgText, lang: rec.lang || 'en', receivedAt: rec.receivedAt || null,
         dismissedAt: new Date().toISOString(), createdAt: new Date().toISOString()
@@ -1159,16 +1161,38 @@ function jaccard_(a, b) {
   var inter = 0; for (w in sa) if (sb[w]) inter++;
   return inter / (na + nb - inter);
 }
-// text가 이미 즉석 처리된 본문과 같은지. 순수(테스트용): handled 맵을 인자로 받음.
-function isDuplicateOfManual_(text, handled) {
+// text가 이미 즉석 처리된 본문과 같으면 그 즉석 draft 키를, 아니면 ''. 순수(테스트용): handled 맵을 인자로 받음.
+function manualDupKey_(text, handled) {
   var norm = normText_(text);
-  if (!norm || norm.length < 8) return false;        // 너무 짧으면 판정 안 함(오탐 방지 → 정상 대기)
+  if (!norm || norm.length < 8) return '';           // 너무 짧으면 판정 안 함(오탐 방지 → 정상 대기)
   for (var k in handled) {
     var h = handled[k]; if (!h || !h.norm) continue;
-    if (h.norm === norm) return true;                 // 완전 일치
-    if (norm.length >= 20 && jaccard_(norm, h.norm) >= 0.9) return true; // 충분히 높을 때만
+    if (h.norm === norm) return k;                    // 완전 일치
+    if (norm.length >= 20 && jaccard_(norm, h.norm) >= 0.9) return k; // 충분히 높을 때만
   }
-  return false;
+  return '';
+}
+
+// 즉석 초안 ↔ 뒤늦게 도착한 원 메일 결합 (2026-07-29 클라라 보고: "매칭돼서 자동으로 잡히게 되어있는데 전혀 안 됨").
+//   종전엔 메일만 dismissed 처리하고 끝 → 즉석 카드는 게스트·예약 '미상'인 채 대기에 영구 잔류,
+//   threadId가 없어 발송 워커도 'threadId 없음 — 발송 불가'로 실패. 신원·회신 경로를 즉석 카드에 채운다.
+function linkManualToEmail_(manualId, msgId, rec) {
+  var m = fbGet('cs/drafts/' + manualId); if (!m) return;
+  if (m.status === 'sent' || m.status === 'dismissed') return; // 이미 끝난 건은 건드리지 않음
+  var patch = {
+    guest:      m.guest      || rec.guest      || null,
+    bookingId:  m.bookingId  || rec.bookingId  || null,
+    threadId:   m.threadId   || rec.threadId   || null,   // ← 이게 채워져야 발송 가능
+    channel:    (!m.channel || m.channel === 'manual') ? (rec.source || 'booking') : m.channel,
+    emailReply: rec.emailReply !== false,
+    receivedAt: rec.receivedAt || m.receivedAt || null,   // 붙여넣은 시각 → 게스트 실제 수신 시각(대화 순서 교정)
+    linkedMsgId: msgId, linkedAt: new Date().toISOString()
+  };
+  var sv = findSirvoy_(patch.bookingId);                  // 방·숙박일자 보강(있으면)
+  if (sv) { patch.sirvoyId = sv.sirvoyId; patch.room = sv.room;
+            patch.checkinDate = sv.checkinDate; patch.checkoutDate = sv.checkoutDate; }
+  fbUpdate('cs/drafts/' + manualId, patch);
+  Logger.log('즉석 결합: ' + manualId + ' ← ' + msgId + ' (예약 ' + (patch.bookingId || '미상') + ', 스레드 ' + (patch.threadId ? 'O' : 'X') + ')');
 }
 
 // ── 즉석 답변 생성기(수동 큐) : DESK가 cs/manualQueue에 붙여넣기 요청 → 여기서 Claude 1회 생성 → cs/drafts ──

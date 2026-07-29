@@ -620,14 +620,22 @@ function renderWait(){
   empty.style.display='none';
   groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1])); // 최근 대화 위로
   const groupsHtml=groups.map(g=>{
-    // 답변 대상 = 그룹 내 최신 actionable 초안
     const acts=g.items.filter(([k,d])=>isActionable_(k,d));
-    const target=acts[acts.length-1]||g.latest;
-    const head=target[1]; // 헤더 정보(게스트·방·숙박·플랫폼)는 대상 기준
+    const notices=acts.filter(([k,d])=>d.status==='notice');          // 부킹 알림 = 별도 조치 카드(답변 대상 아님)
+    const msgs=acts.filter(([k,d])=>d.status!=='notice');
+    // 답변 대상 = 그룹 내 최신 미답 메시지 1건. 나머지 미답은 이 답변으로 함께 정리(시간 역주행 방지).
+    const target=msgs[msgs.length-1]||null;
+    const head=(target||acts[acts.length-1])[1]; // 헤더 정보(게스트·방·숙박·플랫폼)
     const expanded=expandedGroups.has(g.key);
-    const prior=g.items.filter(([k,d])=>k!==target[0]); // 대상 제외한 이전 대화
-    const timeline=(expanded && prior.length)?bubbleTimeline(prior):'';
-    return '<div class="card grp">'+groupHeader(g,head)+timeline+answerBody(target[0],target[1])+'</div>';
+    const unanswered=target?msgs.filter(([k])=>k!==target[0]):[];
+    // 미답 이전 메시지는 접혀 있어도 항상 노출 — 무엇을 함께 정리하는지 보이게. 펼치면 답한 것까지 전부.
+    const prior=expanded?g.items.filter(([k,d])=>!target||k!==target[0]):unanswered;
+    const timeline=prior.length?bubbleTimeline(prior):'';
+    const sweepNote=unanswered.length
+      ?'<div class="edit-hint">이전 미답 '+unanswered.length+'건 — 위 말풍선이 그 내용이고, 이 답변을 승인·치우면 함께 정리됩니다(삭제 아님).</div>':'';
+    const body=(target?sweepNote+answerBody(target[0],target[1]):'')+
+      notices.map(([k,d])=>answerBody(k,d)).join('');
+    return '<div class="card grp">'+groupHeader(g,head)+timeline+body+'</div>';
   }).join('');
   list.innerHTML=genCards+groupsHtml; // 생성 중 카드 먼저(맨 위)
 }
@@ -660,7 +668,22 @@ function renderSent(){
     const sent=Object.entries(drafts||{}).filter(([k,d])=>d&&d.status==='sent');
     if(t) t.textContent=sent.length||'—';
     if(!sent.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
-    sent.sort(waitCmpDesc); list.innerHTML=sent.map(([k,d])=>sentSimple(k,d)).join(''); return;
+    // 2026-07-29: 발송분도 예약 단위 채팅방으로 보관(종전 플랫 리스트 → 지난 기록이 통째로 안 보였음).
+    //   맥락 = 그 예약의 모든 메시지(치운 것 포함 — 지난 기록 보존). notice(부킹 알림)만 제외.
+    const convo=Object.entries(drafts||{}).filter(([k,d])=>d&&d.status!=='notice');
+    const sentKeys={}; sent.forEach(([k,d])=>{ sentKeys[groupKey(d)||('m'+k)]=true; });
+    const sgroups=buildGroups(convo).filter(g=>sentKeys[g.key]);
+    sgroups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1]));
+    list.innerHTML=sgroups.map(g=>{
+      const sentItems=g.items.filter(([k,d])=>d.status==='sent');
+      const latest=sentItems[sentItems.length-1]||g.latest;
+      const expanded=expandedGroups.has(g.key);
+      // 접힘 = 헤더 + 최신 발송분 한 줄 / 펼침 = 전체 대화 말풍선(게스트 원문 ↔ 우리 답변)
+      const body=expanded?bubbleTimeline(g.items):sentSimple(latest[0],latest[1]);
+      return '<div class="card grp">'+groupHeader(g,latest[1],
+        {always:true,collapsedLabel:'전체 대화 '+g.items.length+'건 ▾',expandedLabel:'접기 ▴'})+body+'</div>';
+    }).join('');
+    return;
   }
   const saved=Object.entries(drafts||{}).filter(([k,d])=>d&&isSavedView(k,d));
   if(t) t.textContent=saved.length||'—';
@@ -952,8 +975,9 @@ function approveDraft(id){
   // 편집 언어는 실제 확정 텍스트로 판정(2026-07-20): 영어권 게스트도 한국어로 수정 가능 — 한글 있으면 ko로
   // 마킹돼 GAS resolveGuestFinal_ 가 발송 시 게스트 언어로 자동 번역(영어권=영번역). 기존 비영어권 경로와 동일.
   const finalLang=/[가-힣]/.test(final)?'ko':'en';
+  const sweep=priorPendingIds(id); // 이 답변이 커버하는 이전 미답 건 — 상태 바꾸기 전에 산출
   update(ref(db,'cs/drafts/'+id),{status:'approved',claraFinal:final,claraFinalLang:finalLang,editedByClara:edited,claraToneScore:score,claraDraftEdit:null,saveError:null,approvedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; delete committedEdit[id]; delete selfScores[id];
+    .then(()=>{ editingIds.delete(id); delete edits[id]; delete committedEdit[id]; delete selfScores[id]; sweepPrior(sweep);
       if(learnMode){ optimisticSaved.add(id); triggerImmediateSave(id); renderWait(); renderSent(); } // (2) 즉시 '저장됨' 표시 + 백그라운드 저장
       toast(learnMode?(edited?'수정본 저장됨(학습)':'저장됨(학습)'):(edited?'수정본 승인 — 발송 대기':'승인 — 발송 대기')); })
     .catch(e=>toast('승인 저장 실패: 쓰기 권한 확인'));
@@ -978,13 +1002,32 @@ function retryDraft(id){
 // 치우기(원탭) — status:dismissed. 삭제 아님(데이터 보존). 발송 워커·학습 루프는 status!=='approved'/'sent'이라 자연 제외.
 // reason: 'no-reply'(답불요 — 클라라 판단) / 기본 'handled'(이미 처리된 지난 문의).
 // dismissReason 저장 → 추천 없이 답불요 처리된 건 = 답불요 감지 누락 신호(추후 감지 개선 근거).
+// 같은 예약(그룹)에서 이 메시지보다 앞선 미답 pending 건들. 대표 1건을 처리하면 함께 정리한다.
+//   2026-07-29 클라라 보고: 최신 1건만 답변 대상이라 처리할 때마다 그 이전 미답 건이 다시 떠 시간이 역주행.
+//   초안 프롬프트가 이미 [이 예약의 이전 대화]를 보고 답하므로 대표 답변 1건이 전체를 커버한다.
+//   notice(부킹 알림)·error(발송 실패 재시도 대상)는 제외 — 별도 조치가 필요한 카드.
+function priorPendingIds(id){
+  const d=drafts[id]; if(!d) return [];
+  const gk=groupKey(d)||('m'+id), t=msgTimeMs(d);
+  return Object.entries(drafts||{}).filter(([k,o])=>k!==id && o
+    && (groupKey(o)||('m'+k))===gk && (o.status||'pending')==='pending'
+    && !isSavedView(k,o) && msgTimeMs(o)<=t).map(([k])=>k);
+}
+// 함께 정리(삭제 아님) — 대표 건 처리 성공 후에만 호출.
+function sweepPrior(ids){
+  if(!ids.length) return;
+  const now=new Date().toISOString(), patch={};
+  ids.forEach(k=>{ patch[k+'/status']='dismissed'; patch[k+'/dismissReason']='group-resolved'; patch[k+'/dismissedAt']=now; });
+  update(ref(db,'cs/drafts'),patch).then(()=>toast('이전 미답 '+ids.length+'건 함께 정리')).catch(()=>{});
+}
 function dismissDraft(id,reason){
   const d=drafts[id];
   const st=d?(d.status||'pending'):'';
   if(!d || (st!=='pending' && st!=='notice' && st!=='error')){ toast('대기·발송 실패 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림·발송 실패 카드는 치우기 허용)
   const manualSent=(reason==='manual-sent'); const noReply=(reason==='no-reply');
+  const sweep=priorPendingIds(id); // 상태 바꾸기 전에 산출
   update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissReason:manualSent?'manual-sent':(noReply?'no-reply':'handled'),dismissedAt:new Date().toISOString()})
-    .then(()=>{ editingIds.delete(id); delete edits[id]; toast(manualSent?'발송함으로 치움':(noReply?'답불요로 치움':'지난 문의로 치움')); })
+    .then(()=>{ editingIds.delete(id); delete edits[id]; sweepPrior(sweep); toast(manualSent?'발송함으로 치움':(noReply?'답불요로 치움':'지난 문의로 치움')); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
 }
 // (D) 질문 분류 자산화: 대상 draft들을 category별로 그룹핑 → {category, count, representatives[]}.
