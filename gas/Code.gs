@@ -1195,6 +1195,22 @@ function linkManualToEmail_(manualId, msgId, rec) {
   Logger.log('즉석 결합: ' + manualId + ' ← ' + msgId + ' (예약 ' + (patch.bookingId || '미상') + ', 스레드 ' + (patch.threadId ? 'O' : 'X') + ')');
 }
 
+// 1회성 소급 결합 — 수리 전(~2026-07-29)에 메일만 dismissed 처리되고 즉석 카드가 '미상'으로 남은 건 복구.
+//   멱등(linkedManualId 있으면 건너뜀). GAS 에디터에서 수동 1회 실행.
+function relinkManualDrafts() {
+  var drafts = fbGet('cs/drafts') || {}, handled = fbGet('cs/handledManual') || {}, n = 0;
+  for (var id in drafts) {
+    var d = drafts[id];
+    if (!d || d.origin !== 'polling-dup' || d.linkedManualId) continue;
+    var mid = manualDupKey_(d.origMsg || '', handled); if (!mid) continue;
+    var rec = fbGet('cs/inbox/' + id); if (!rec) continue;   // threadId·게스트·예약은 inbox에만 있음
+    linkManualToEmail_(mid, id, rec);
+    fbUpdate('cs/drafts/' + id, { linkedManualId: mid });
+    n++;
+  }
+  Logger.log('즉석 소급 결합: ' + n + '건');
+}
+
 // ── 즉석 답변 생성기(수동 큐) : DESK가 cs/manualQueue에 붙여넣기 요청 → 여기서 Claude 1회 생성 → cs/drafts ──
 //   doPost(즉시)·pollCsInbox(백업) 둘 다 호출. Claude urlfetch 사용(생성이라 불가피, 문의당 1회).
 function processManualQueue_() {
