@@ -311,7 +311,8 @@ function sendApprovedDrafts() {
       if (!aliasReply) { fbUpdate('cs/drafts/' + id, { status: 'error', errorMsg: 'finalReply 비어있음' }); continue; }
       try {
         if (!gmSendToAddress_(alias, aliasReply)) { fbUpdate('cs/drafts/' + id, { status: 'approved', sendingAt: null }); break; } // 예산 없음 → 되돌림, 다음 run
-        fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), sentVia: 'expedia-alias', sentTo: alias, errorMsg: null });
+        // finalReply=실제 나간 본문 보존(2026-07-31): 미저장이면 보냄 탭이 d.reply(AI 원본 초안)로 폴백해 '수정 전'이 기록으로 남음
+        fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), sentVia: 'expedia-alias', sentTo: alias, finalReply: aliasReply, errorMsg: null });
         learnFromSend_(id, fresh, aliasReply);
         Logger.log('발송 완료(익스피디아 별칭) ' + id + ' → ' + alias);
       } catch (e) {
@@ -328,7 +329,7 @@ function sendApprovedDrafts() {
     try {
       var ok = gmReplyThread_(threadId, finalReply);
       if (!ok) { fbUpdate('cs/drafts/' + id, { status: 'approved', sendingAt: null }); break; } // 예산 없음 → 되돌림, 다음 run
-      fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), errorMsg: null });
+      fbUpdate('cs/drafts/' + id, { status: 'sent', sentAt: new Date().toISOString(), finalReply: finalReply, errorMsg: null }); // finalReply 보존(위 별칭 경로와 동일 사유)
       learnFromSend_(id, fresh, finalReply);
       Logger.log('발송 완료 ' + id + (fresh.autoApproved ? ' (자동)' : ''));
     } catch (e) {

@@ -481,12 +481,16 @@ function groupHeader(g, head, opts){
     '<div class="stayline"><span class="rm">'+esc(head.room||'미상')+'</span> · '+esc(stayLabel(head))+toggle+'</div>'+
   '</div>';
 }
+// 기록에 보여줄 '실제 나간 답변' (2026-07-31 클라라 신고: 보냄 탭에 수정 전 AI 초안이 뜨던 것).
+//   finalReply=발송 워커가 저장한 실발송 본문(신규) → claraFinal=클라라 확정 편집본(과거 sent 소급 복구)
+//   → reply=AI 원본 초안(최후 폴백). reply를 앞에 두면 '수정했는데 수정 전이 기록으로 남는' 사고가 난다.
+function sentText(d){ return String((d&&d.finalReply)||(d&&d.claraFinal)||(d&&d.reply)||''); }
 // 시간순 말풍선(좌=게스트 원문, 우=우리 답변[답한 것만]). items = [[id,d],...]
 function bubbleTimeline(items){
   return '<div class="thread">'+items.map(([id,d])=>{
     const g='<div class="bub bub-g"><div class="bub-t">'+esc(fmtKST(d.receivedAt||d.createdAt))+'</div>'+esc(d.origMsg||'—')+'</div>';
     const answered=(d.status==='saved'||d.status==='sent'||d.status==='approved'||isSavedView(id,d));
-    const ans=answered?String(d.finalReply||d.reply||'').replace(IMG_RE,'').trim():'';
+    const ans=answered?sentText(d).replace(IMG_RE,'').trim():'';
     return g+(ans?'<div class="bub bub-us">'+esc(ans)+'</div>':'');
   }).join('')+'</div>';
 }
@@ -740,7 +744,7 @@ function sentDetail(id,d){
   '</div>';
 }
 function sentSimple(id,d){
-  const s=String(d.finalReply||d.reply||'').replace(IMG_RE,'').replace(/\s+/g,' ').trim();
+  const s=sentText(d).replace(IMG_RE,'').replace(/\s+/g,' ').trim();
   return '<div class="card"><div class="meta"><span class="guest">'+esc(d.guest||'게스트')+'</span>'+
     '<span class="lang">'+esc(String(d.lang||'—').toUpperCase())+'</span>'+
     (d.editedByClara?'<span class="edited-badge">수정본</span>':'')+
