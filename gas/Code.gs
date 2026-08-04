@@ -904,6 +904,7 @@ function isAgodaEndMarker_(t) {
       || t.indexOf('YCS') >= 0
       || t.indexOf('© ') >= 0 || t.indexOf('©Agoda') >= 0 || t.indexOf('Copyright') >= 0
       || t.indexOf('이 이메일') >= 0
+      || t.indexOf('특별 요청 사항에 대한 동의') >= 0 // Special Request형 푸터(동의 버튼 안내) 시작점
       || t.indexOf('회신하려면') >= 0
       || /^[-─—=_]{3,}$/.test(t); // 구분선
 }
@@ -925,8 +926,10 @@ function parseAgoda_(raw) {
          else { var dm = from.match(/^\s*"?([^"<]+?)"?\s*</); if (dm) out.guest = dm[1].trim(); } }
 
   // 예약번호: 본문 "예약 번호: {번호}" (한국어 라벨). 게스트 본문 속 영문 'booking number'와 구분됨.
+  // 예약번호: 본문 "예약 번호: {번호}"(Inquiry/Reply형). Special Request형은 본문에 콜론형이 없고
+  //   표 헤더("예약 번호 • 체크인 …")와 값이 분리돼 있어 제목 "Booking ID {번호}"에서 폴백(2026-08-04 실물 확인).
   var mk = body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
-  out.bookingId = mk ? mk[1] : null;
+  out.bookingId = mk ? mk[1] : ((subject.match(/Booking\s*ID\s*([0-9]{6,})/i) || [])[1] || null);
 
   // 체크인/아웃: 제목 괄호의 날짜 범위 "Jul 11-12, 2026"
   var mr = subject.match(/\(([^)]+)\)/);
@@ -935,17 +938,32 @@ function parseAgoda_(raw) {
     if (d) { var mo = monthNum_(d[1]); if (mo) { out.checkinDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[2]); out.checkoutDate = d[4] + '-' + pad2_(mo) + '-' + pad2_(d[3]); } }
   }
 
-  // 게스트 본문: "메시지:" 라벨 뒤부터 첫 종료마커 전까지. ("이전 메시지"는 앵커로 쓰지 않음)
-  var msgIdx = -1;
-  for (var i = 0; i < lines.length; i++) {
-    if (/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])) { msgIdx = i; break; }
+  // 게스트 본문 시작 앵커 — 2026-08-04 실물(MIME 원문) 확인: 아고다가 "메시지:" 라벨을 폐기해
+  //   기존 앵커가 두 템플릿 모두에서 불발 → 아고다 전건 초안 누락. 앵커 3종으로 확장.
+  //   ①레거시 "메시지:"(복귀 대비 유지) ②"예약 번호: {번호}" 다음 줄(Inquiry/Reply형)
+  //   ③"{이름} 8월 04, 12:18 오후 ICT" 타임스탬프 다음 줄(Special Request형 — 본문에 예약번호 줄이 없음).
+  //   ③은 첫 타임스탬프만 사용(하단 과거 대화 이력의 타임스탬프에 걸리지 않게), ②가 있으면 ②가 우선.
+  var startAt = -1;
+  for (var i = 0; i < lines.length; i++) {                                     // ①은 전체를 먼저 훑어 최우선 적용
+    if (/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])) {
+      lines[i] = lines[i].replace(/^\s*메시지\s*[:：]\s*/, ''); startAt = i; break;
+    }
   }
-  if (msgIdx >= 0) {
+  if (startAt < 0) {
+    var bkAt = -1, tsAt = -1;
+    for (var i2 = 0; i2 < lines.length; i2++) {
+      if (/예약\s*번호\s*[:：]\s*[0-9]{6,}/.test(lines[i2])) { bkAt = i2 + 1; break; }                                 // ②(발견 즉시 확정 — ③보다 우선)
+      if (tsAt < 0 && /\d{1,2}월\s*\d{1,2},\s*\d{1,2}:\d{2}\s*(?:오전|오후)\s*ICT/.test(lines[i2])) tsAt = i2 + 1;     // ③(첫 건만)
+    }
+    startAt = bkAt >= 0 ? bkAt : tsAt;
+  }
+  if (startAt >= 0) {
     var collected = [];
-    var firstAfter = lines[msgIdx].replace(/^\s*메시지\s*[:：]\s*/, '');
-    if (firstAfter.trim()) collected.push(firstAfter);
-    for (var j = msgIdx + 1; j < lines.length && collected.length < 40; j++) {
-      if (isAgodaEndMarker_(lines[j].trim())) break;
+    for (var j = startAt; j < lines.length && collected.length < 40; j++) {
+      var t = lines[j].trim();
+      if (isAgodaEndMarker_(t)) break;
+      // 선행 빈 줄 + 숙소(호스트) 앞으로 온 인사말 줄은 게스트 본문이 아니므로 건너뜀
+      if (!collected.length && (!t || /고객님,?\s*안녕하세요/.test(t))) continue;
       collected.push(lines[j]);
     }
     out.message = collected.join('\n').trim() || null;

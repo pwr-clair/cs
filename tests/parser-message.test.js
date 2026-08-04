@@ -40,20 +40,38 @@ function bookingMessage(body, subject, guest){
   return out;
 }
 
-// parseAgoda_ 의 message 추출부 재현 — "메시지:" 라벨 앵커(껍데기 배제).
+// parseAgoda_ 의 message 추출부 재현 — 앵커 3종(레거시 "메시지:" / 예약번호 줄 / ICT 타임스탬프 줄).
 function isAgodaEnd(t){ if(!t) return false;
   return t.indexOf('Did you know?')>=0||t.indexOf('이전 메시지')>=0||t.indexOf('아래 원문')>=0
     ||t.indexOf('예약 관리')>=0||t.indexOf('YCS')>=0||t.indexOf('© ')>=0||t.indexOf('©Agoda')>=0||t.indexOf('Copyright')>=0
-    ||t.indexOf('이 이메일')>=0||t.indexOf('회신하려면')>=0||/^[-─—=_]{3,}$/.test(t); }
+    ||t.indexOf('이 이메일')>=0||t.indexOf('특별 요청 사항에 대한 동의')>=0||t.indexOf('회신하려면')>=0||/^[-─—=_]{3,}$/.test(t); }
 function agodaMessage(body){
-  var lines=body.split('\n'), msgIdx=-1;
-  for(var i=0;i<lines.length;i++){ if(/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])){ msgIdx=i; break; } }
+  var lines=body.split('\n'), startAt=-1;
+  for(var i=0;i<lines.length;i++){                       // ①레거시 라벨 전체 선행 스캔(최우선)
+    if(/^\s*메시지\s*[:：]/.test(lines[i]) && !/이전\s*메시지/.test(lines[i])){
+      lines[i]=lines[i].replace(/^\s*메시지\s*[:：]\s*/,''); startAt=i; break; }
+  }
+  if(startAt<0){ var bkAt=-1, tsAt=-1;
+    for(var i2=0;i2<lines.length;i2++){
+      if(/예약\s*번호\s*[:：]\s*[0-9]{6,}/.test(lines[i2])){ bkAt=i2+1; break; }                                  // ②
+      if(tsAt<0 && /\d{1,2}월\s*\d{1,2},\s*\d{1,2}:\d{2}\s*(?:오전|오후)\s*ICT/.test(lines[i2])) tsAt=i2+1;        // ③
+    }
+    startAt = bkAt>=0 ? bkAt : tsAt;
+  }
   var out={message:null, extractFailed:false};
-  if(msgIdx>=0){ var c=[]; var fa=lines[msgIdx].replace(/^\s*메시지\s*[:：]\s*/,''); if(fa.trim())c.push(fa);
-    for(var j=msgIdx+1;j<lines.length && c.length<40;j++){ if(isAgodaEnd(lines[j].trim()))break; c.push(lines[j]); }
+  if(startAt>=0){ var c=[];
+    for(var j=startAt;j<lines.length && c.length<40;j++){ var t=lines[j].trim();
+      if(isAgodaEnd(t))break;
+      if(!c.length && (!t || /고객님,?\s*안녕하세요/.test(t))) continue;
+      c.push(lines[j]); }
     out.message=c.join('\n').trim()||null; if(out.message&&out.message.length>1500)out.message=out.message.slice(0,1500); }
   if(!out.message)out.extractFailed=true;
   return out;
+}
+// parseAgoda_ 의 bookingId 추출부 재현 — 본문 콜론형 우선, 없으면 제목 "Booking ID {번호}" 폴백.
+function agodaBookingId(body, subject){
+  var mk=body.match(/예약\s*번호\s*[:：]\s*([0-9]{6,})/);
+  return mk ? mk[1] : ((String(subject||'').match(/Booking\s*ID\s*([0-9]{6,})/i)||[])[1] || null);
 }
 
 var pass=0, fail=0;
@@ -172,5 +190,62 @@ var a2 = agodaMessage([
 ].join('\n'));
 ok('3b 라벨 없으면 message null', a2.message===null);
 ok('3b extractFailed=true(껍데기 미덤프)', a2.extractFailed===true);
+
+print('[4] 아고다 신형 2종 — "메시지:" 라벨 폐기(2026-08-04 실물 MIME 확인) 후에도 본문 추출');
+
+// 4a) Inquiry/Reply형 — 예약번호 줄 다음이 게스트 본문. (Nicolas Da Fonseca 실사례 구조)
+var n1 = agodaMessage([
+  'Self Check-in Only Residence near Incheon Airport T1 & Paradise City님, 안녕하세요.',
+  '현재 귀하의 숙소에 숙박 중인 투숙객에게서 온 메시지입니다.',
+  '[ 새 메시지 ] 문의 사항 (발신: Nicolas Da Fonseca님)',
+  '현재 투숙객',
+  'Nicolas Da Fonseca 8월 04, 10:45 오전 ICT',
+  '예약 번호: 2037763170',
+  'こんにちは。午後3時に到着予定です。よろしくお願いします。',
+  '아래 원문 메시지가 상단의 텍스트로 자동 번역됨 (Google Translate 이용)',
+  'Hello, we will arrive at 3pm. Thank you'
+].join('\n'));
+eq('4a 예약번호 줄 다음이 본문', n1.message, 'こんにちは。午後3時に到着予定です。よろしくお願いします。');
+ok('4a 껍데기·이력 미포함', noneOf(n1.message||'', ['안녕하세요','투숙객에게서','새 메시지','예약 번호','자동 번역']));
+ok('4a extractFailed=false', n1.extractFailed===false);
+eq('4a bookingId 본문에서', agodaBookingId('예약 번호: 2037763170', 'Inquiry by Nicolas Da Fonseca (Aug 4-5, 2026)'), '2037763170');
+
+// 4b) Special Request형 — 본문에 예약번호 줄이 없음. ICT 타임스탬프 다음이 본문, 인사말 줄은 스킵.
+var s1 = agodaMessage([
+  '새 메시지(발신: Jeong Seop Son)',
+  'Jeong Seop Son 8월 04, 12:18 오후 ICT',
+  '',
+  '무인 체크인 전용, 인천공항 T1·파라다이스시티 인근 레지던스 고객님, 안녕하세요.,',
+  '',
+  'ArrivalTime:20 00 - 21 00',
+  '',
+  '특별 요청 사항에 대한 동의 여부를 하단에서 확인해 주시기 바랍니다.',
+  '반영 가능',
+  'YCS를 통해 답장하기'
+].join('\n'));
+eq('4b 타임스탬프 다음이 본문(인사말 스킵)', s1.message, 'ArrivalTime:20 00 - 21 00');
+ok('4b 동의 안내 푸터 미포함', noneOf(s1.message||'', ['특별 요청','반영 가능','YCS','안녕하세요']));
+ok('4b extractFailed=false', s1.extractFailed===false);
+eq('4b bookingId 제목 폴백', agodaBookingId('예약 번호 • 체크인 • 체크아웃\n1757360771 2026. 8. 5.', 'Special Request for Booking ID 1757360771 (Aug 5-6, 2026)'), '1757360771');
+
+// 4c) [회귀 감시] 하단 과거 대화 이력의 타임스탬프에 앵커가 걸리면 옛 메시지를 본문으로 오추출
+var h1 = agodaMessage([
+  '새 메시지(발신: K im)',
+  'K im 7월 29, 06:34 오전 ICT',
+  '지금 보낸 새 문의입니다',
+  'Did you know?',
+  '8월 03, 05:04 오전 ICT Self Check-in Only Residence',
+  '■ 체크인 안내 — 옛 발송 이력입니다'
+].join('\n'));
+eq('4c 첫 타임스탬프만 앵커(이력 오추출 방지)', h1.message, '지금 보낸 새 문의입니다');
+
+// 4d) 레거시 "메시지:" 라벨이 돌아와도 그대로 동작(우선 앵커)
+var g1 = agodaMessage([
+  '[새 메시지] 문의 사항 (발신: Jane Smith님)',
+  '예약 번호: 1234567890',
+  '메시지: legacy label still wins',
+  'Did you know?'
+].join('\n'));
+eq('4d 레거시 라벨 우선', g1.message, 'legacy label still wins');
 
 print('결과: '+pass+' PASS / '+fail+' FAIL');
