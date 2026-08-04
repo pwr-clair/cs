@@ -1,14 +1,32 @@
-// 순수 로직 검증 (jsc) — 2026-07-29 후기 정책 개편
+// 순수 로직 검증 (jsc) — 2026-07-29 후기 정책 개편 + 2026-08-04 후기 작성 감지
 //   ① reviewEligible_: 체크아웃 1일+·7일 내 + 불만 0 + 긍정 2 이상
 //   ② reviewTemplateFor_: 한국어 대화=한국어, 그 외 전부 영어
 //   ③ 고정 문구가 발송단 이모지 제거(stripEmoji_)를 통과해도 무변형(⭐·→ 사전 제거 확인)
-// gas/Code.gs와 동일 구현 복제.
+//   ④ normNameTokens_/reviewAlertMatches_/reviewedAutoSkip_: 후기 알림메일 ↔ 게스트 이름 매칭
+//      (순서 무관·발음기호 무시) + 이미 작성 건 자동 건너뜀 판정
+// ①②③은 gas/Code.gs, ④는 gas/ReviewDedup.gs와 동일 구현 복제.
 
 function reviewEligible_(s, yesterday, windowStart) {
   if (!s || !s.checkoutDate) return false;
   if (s.checkoutDate > yesterday || s.checkoutDate < windowStart) return false;
   if ((s.negCount || 0) > 0) return false;
   return (s.posCount || 0) >= 2;
+}
+function normNameTokens_(name) {
+  var s = String(name == null ? '' : name).toLowerCase();
+  try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {} // é→e, ć→c
+  return s.replace(/[^a-z가-힣]+/g, ' ').split(' ')
+    .filter(function (t) { return t.length >= 2; }).sort();
+}
+function reviewAlertMatches_(mailText, guestName) {
+  var toks = normNameTokens_(guestName);
+  if (!toks.length) return false;
+  var hay = ' ' + normNameTokens_(mailText).join(' ') + ' ';
+  for (var i = 0; i < toks.length; i++) if (hay.indexOf(' ' + toks[i] + ' ') < 0) return false;
+  return true;
+}
+function reviewedAutoSkip_(q, s) {
+  return !!(q && q.status === 'proposed' && s && s.reviewedAt);
 }
 var REVIEW_MSG_EN =
   'Dear guest,\n\n' +
@@ -62,6 +80,23 @@ ok('6일 전 체크아웃 → 대상(1일 이상 조건 충족)', reviewEligible
 ok('8일 전 체크아웃 → 제외(뒷북 방지 7일 창)', reviewEligible_({checkoutDate:'2026-07-21',posCount:2,negCount:0},Y,W)===false);
 ok('체크아웃일 미상 → 제외', reviewEligible_({posCount:9,negCount:0},Y,W)===false);
 ok('posCount 없음 → 제외', reviewEligible_({checkoutDate:'2026-07-28'},Y,W)===false);
+
+print('[4] 후기 작성 감지 — 이름 매칭(순서 무관·발음기호 무시·전 토큰 요구)');
+eq('토큰화: "LEE, BUMRAE" → [bumrae,lee]', normNameTokens_('LEE, BUMRAE'), ['bumrae','lee']);
+eq('토큰화: "Bumrae Lee" 동일', normNameTokens_('Bumrae Lee'), ['bumrae','lee']);
+eq('발음기호: "Gugić, Stipe" → [gugic,stipe]', normNameTokens_('Gugić, Stipe'), ['gugic','stipe']);
+eq('이니셜(1자) 제거: "Stipe G." → [stipe]', normNameTokens_('Stipe G.'), ['stipe']);
+ok('성/이름 순서 바뀐 표기 매칭', reviewAlertMatches_('Bumrae Lee left you a review', 'LEE, BUMRAE')===true);
+ok('발음기호 차이 매칭 (Gugic vs Gugić)', reviewAlertMatches_('Guest Stipe Gugic has left a 10 review', 'Gugić, Stipe')===true);
+ok('본문 어딘가에 이름 등장해도 매칭(단어 단위)', reviewAlertMatches_('New review\nGuest: CHO, AHYE\nScore 10', 'Ahye Cho')===true);
+ok('일부 토큰만 일치 → 불일치(다른 게스트 보호)', reviewAlertMatches_('Katherine Smith left a review', 'Ross, Katherine')===false);
+ok('부분 문자열은 단어로 안 침 (Lee vs Leeds)', reviewAlertMatches_('Greetings from Leeds hotel review', 'Lee, Bumrae')===false);
+ok('익명 후기(이름 없음) → 불일치(안전 기본값: 막지 않음)', reviewAlertMatches_('You have a new anonymous review', 'LEE, BUMRAE')===false);
+ok('빈 이름 → 불일치', reviewAlertMatches_('any review text', '')===false);
+ok('자동 건너뜀: proposed+reviewedAt → true', reviewedAutoSkip_({status:'proposed'},{reviewedAt:'2026-08-03T01:00:00Z'})===true);
+ok('자동 건너뜀 아님: 후기 작성 안 함', reviewedAutoSkip_({status:'proposed'},{})===false);
+ok('자동 건너뜀 아님: 이미 승인된 후보는 안 건드림', reviewedAutoSkip_({status:'approved'},{reviewedAt:'2026-08-03T01:00:00Z'})===false);
+ok('자동 건너뜀 아님: score 없음', reviewedAutoSkip_({status:'proposed'},undefined)===false);
 
 print('[2] 언어 선택 — 한국어만 한국어, 나머지 전부 영어');
 eq('ko → 한국어 문구', reviewTemplateFor_('ko').lang, 'ko');
