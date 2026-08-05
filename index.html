@@ -185,6 +185,15 @@ button{font-family:inherit;}
 .b:disabled{opacity:.45;cursor:not-allowed;}
 .b.go:disabled{background:var(--go);}
 .readonly-note{font-size:9px;color:var(--muted);text-align:center;margin-top:8px;}
+/* 답변 학습 붙여넣기(OTA 직접 발송분) — 치울 때 or 보냄 탭 밀린 목록에서 */
+#pasteOv{position:fixed;inset:0;background:rgba(20,18,12,.45);display:none;align-items:center;justify-content:center;z-index:60;padding:16px;}
+#pasteOv .pastebox{background:var(--card,#fff);border-radius:12px;padding:14px;max-width:520px;width:100%;max-height:85vh;overflow:auto;display:flex;flex-direction:column;gap:8px;}
+#pasteOv .pb-orig{font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:130px;overflow:auto;background:rgba(0,0,0,.04);border-radius:8px;padding:8px;}
+#pasteOv textarea{min-height:120px;}
+.pb-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:7px 0;border-top:1px solid rgba(0,0,0,.07);}
+.pb-row:first-of-type{margin-top:8px;}
+.pb-q{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pb-row .b{flex:none;padding:4px 10px;font-size:11px;}
 .status{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;border-radius:100px;padding:2px 9px;margin-left:auto;}
 .status.approved{background:var(--amber-soft);color:var(--amber);}
 .status.sending{background:var(--night-soft);color:var(--night);}
@@ -326,6 +335,16 @@ button{font-family:inherit;}
   </div>
 
 </div></div>
+
+<div id="pasteOv">
+  <div class="pastebox">
+    <div class="who" style="font-weight:700;">답변 학습 — OTA에서 직접 보낸 답 붙여넣기</div>
+    <div class="pb-orig" id="pasteOrig"></div>
+    <textarea id="pasteTxt" class="editbox" placeholder="실제 보낸 답을 그대로 붙여넣기 (보낸 언어 그대로, 수정 불필요)"></textarea>
+    <div class="btns" id="pasteBtns"></div>
+    <div class="readonly-note">저장하면 코퍼스에 정답으로 적재 — 다음 초안부터 few-shot 예시로 참고됩니다</div>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -668,17 +687,18 @@ function renderSent(){
   const list=document.getElementById('sentList'); if(!list) return;
   const lbl=document.getElementById('tSentLbl'); if(lbl) lbl.textContent=learnMode?'학습됨':'보냄';
   const t=document.getElementById('tSent');
+  const backlog=pasteBacklogHtml(); // 직접 답한 문의 학습(밀린 붙여넣기) — 탭 최상단
   if(!learnMode){
     const sent=Object.entries(drafts||{}).filter(([k,d])=>d&&d.status==='sent');
     if(t) t.textContent=sent.length||'—';
-    if(!sent.length){ list.innerHTML='<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
+    if(!sent.length){ list.innerHTML=backlog+'<div class="empty"><div class="big">보낸 초안 없음</div>승인·발송된 답변이 여기 쌓입니다.</div>'; return; }
     // 2026-07-29: 발송분도 예약 단위 채팅방으로 보관(종전 플랫 리스트 → 지난 기록이 통째로 안 보였음).
     //   맥락 = 그 예약의 모든 메시지(치운 것 포함 — 지난 기록 보존). notice(부킹 알림)만 제외.
     const convo=Object.entries(drafts||{}).filter(([k,d])=>d&&d.status!=='notice');
     const sentKeys={}; sent.forEach(([k,d])=>{ sentKeys[groupKey(d)||('m'+k)]=true; });
     const sgroups=buildGroups(convo).filter(g=>sentKeys[g.key]);
     sgroups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1]));
-    list.innerHTML=sgroups.map(g=>{
+    list.innerHTML=backlog+sgroups.map(g=>{
       const sentItems=g.items.filter(([k,d])=>d.status==='sent');
       const latest=sentItems[sentItems.length-1]||g.latest;
       const expanded=expandedGroups.has(g.key);
@@ -691,13 +711,13 @@ function renderSent(){
   }
   const saved=Object.entries(drafts||{}).filter(([k,d])=>d&&isSavedView(k,d));
   if(t) t.textContent=saved.length||'—';
-  if(!saved.length){ list.innerHTML='<div class="empty"><div class="big">저장된 학습 답변 없음</div>승인·저장된 답변이 여기 쌓입니다.</div>'; return; }
+  if(!saved.length){ list.innerHTML=backlog+'<div class="empty"><div class="big">저장된 학습 답변 없음</div>승인·저장된 답변이 여기 쌓입니다.</div>'; return; }
   // 그룹 맥락 = 저장분이 있는 예약의 비-dismissed 대화 전체
   const convo=Object.entries(drafts||{}).filter(([k,d])=>d&&(d.status||'pending')!=='dismissed'&&d.status!=='sent');
   const savedKeys={}; saved.forEach(([k,d])=>{ savedKeys[groupKey(d)||('m'+k)]=true; });
   const groups=buildGroups(convo).filter(g=>savedKeys[g.key]);
   groups.sort((a,b)=>msgTimeMs(b.latest[1])-msgTimeMs(a.latest[1]));
-  list.innerHTML=groups.map(g=>{
+  list.innerHTML=backlog+groups.map(g=>{
     const savedItems=g.items.filter(([k,d])=>isSavedView(k,d));
     const latest=savedItems[savedItems.length-1]||g.latest;
     const expanded=expandedGroups.has(g.key);
@@ -1026,6 +1046,12 @@ function sweepPrior(ids){
 }
 function dismissDraft(id,reason){
   const d=drafts[id];
+  // 답변 학습 훅: 클라라가 OTA에서 직접 답하고 치우는 건(지난 문의·발송함) — 치우기 전에 실제 보낸 답 붙여넣기 제안(선택, [그냥 치우기]로 통과)
+  if(d && (reason==null||reason==='manual-sent') && (d.status||'pending')!=='notice' && d.reply && !d.corpusPasted){ openPaste(id,reason||'handled'); return; }
+  dismissNow(id,reason);
+}
+function dismissNow(id,reason){
+  const d=drafts[id];
   const st=d?(d.status||'pending'):'';
   if(!d || (st!=='pending' && st!=='notice' && st!=='error')){ toast('대기·발송 실패 상태 초안만 치울 수 있습니다'); return; } // 발송 진행 건 보호(알림·발송 실패 카드는 치우기 허용)
   const manualSent=(reason==='manual-sent'); const noReply=(reason==='no-reply');
@@ -1033,6 +1059,56 @@ function dismissDraft(id,reason){
   update(ref(db,'cs/drafts/'+id),{status:'dismissed',dismissReason:manualSent?'manual-sent':(noReply?'no-reply':'handled'),dismissedAt:new Date().toISOString()})
     .then(()=>{ editingIds.delete(id); delete edits[id]; sweepPrior(sweep); toast(manualSent?'발송함으로 치움':(noReply?'답불요로 치움':'지난 문의로 치움')); })
     .catch(e=>toast('치우기 실패: 쓰기 권한 확인'));
+}
+// ── 답변 학습 붙여넣기 ── OTA 직접 발송분을 (게스트 원문, 실제 답) 쌍으로 cs/corpus에 정답 적재.
+//   키=draft id(Gmail msgId) — 마이닝·발송 학습과 같은 키라 이중 적재 자연 방지.
+let pasteCtx=null; // {id, reason:string|null} — reason 있으면 저장/통과 후 치우기까지
+function openPaste(id,reason){
+  const d=drafts[id]; if(!d) return;
+  pasteCtx={id, reason:(reason==null?null:reason)};
+  document.getElementById('pasteOrig').textContent=String(d.origMsg||'').slice(0,500);
+  document.getElementById('pasteTxt').value='';
+  document.getElementById('pasteBtns').innerHTML=
+    '<button class="b go" onclick="pasteSave()">'+(pasteCtx.reason?'학습하고 치우기':'학습 저장')+'</button>'+
+    (pasteCtx.reason?'<button class="b skip" onclick="pasteDismissOnly()">그냥 치우기</button>':'')+
+    '<button class="b skip" onclick="pasteClose()">취소</button>';
+  document.getElementById('pasteOv').style.display='flex';
+}
+function pasteClose(){ pasteCtx=null; document.getElementById('pasteOv').style.display='none'; }
+function pasteDismissOnly(){ const c=pasteCtx; pasteClose(); if(c&&c.reason) dismissNow(c.id,c.reason); }
+function pasteSave(){
+  const c=pasteCtx; if(!c) return;
+  const d=drafts[c.id]; if(!d){ pasteClose(); return; }
+  const text=document.getElementById('pasteTxt').value.trim();
+  if(!text){ toast('붙여넣은 답이 비어 있습니다'); return; }
+  set(ref(db,'cs/corpus/'+c.id),{
+    '상황요약':String(d.origMsg||''),'최종답변':text,
+    lang:d.lang||'en',category:d.category||null,stage:d.stayStage||null,
+    origin:'구축',src:'paste',ts:new Date().toISOString()
+  }).then(()=>{
+    update(ref(db,'cs/drafts/'+c.id),{corpusPasted:true}).catch(()=>{});
+    pasteClose(); toast('학습 저장 완료 — 다음 초안부터 참고됩니다');
+    if(c.reason) dismissNow(c.id,c.reason);
+  }).catch(()=>toast('학습 저장 실패: 쓰기 권한 확인'));
+}
+function skipPaste(id){ update(ref(db,'cs/drafts/'+id),{corpusPasted:true}).then(()=>renderSent()).catch(()=>toast('처리 실패: 쓰기 권한 확인')); }
+// 학습 밀린 건 = 직접 답하고 치운 건(지난 문의·발송함) 중 미학습분. 알림·후기·일괄정리분 제외. 최신순 50건.
+function pasteBacklog(){
+  return Object.entries(drafts||{}).filter(([k,d])=>d && d.status==='dismissed'
+    && (d.dismissReason==='handled'||d.dismissReason==='manual-sent')
+    && d.reply && d.origMsg && !d.corpusPasted
+    && d.origin!=='notice' && d.origin!=='notice-eta' && d.origin!=='review')
+    .sort((a,b)=>msgTimeMs(b[1])-msgTimeMs(a[1])).slice(0,50);
+}
+function pasteBacklogHtml(){
+  const items=pasteBacklog(); if(!items.length) return '';
+  const open=expandedGroups.has('pasteBacklog');
+  const rows=open?items.map(([k,d])=>'<div class="pb-row"><span class="pb-q" title="'+esc(String(d.origMsg||'').slice(0,300))+'">'+esc(String(d.origMsg||'').slice(0,90))+'</span>'+
+    '<button class="b go" onclick="openPaste(\''+k+'\',null)">붙여넣기</button>'+
+    '<button class="b skip" onclick="skipPaste(\''+k+'\')" title="학습 없이 목록에서 제거">건너뜀</button></div>').join(''):'';
+  return '<div class="card"><div style="display:flex;align-items:center;gap:8px;cursor:pointer;" onclick="toggleGroup(\'pasteBacklog\')">'+
+    '<b style="font-size:13px;">🖊 직접 답한 문의 학습</b><span class="cat">'+items.length+'건</span>'+
+    '<span style="margin-left:auto;font-size:11px;color:var(--muted);">'+(open?'접기 ▴':'펼치기 ▾')+'</span></div>'+rows+'</div>';
 }
 // (D) 질문 분류 자산화: 대상 draft들을 category별로 그룹핑 → {category, count, representatives[]}.
 //   신규 AI 호출 없음(이미 계산된 d.category 재사용). 대표 질문은 정규화 중복 제거 후 최대 2개.
@@ -1175,6 +1251,7 @@ window.doLogin=doLogin; window.logout=logout; window.toggleAuto=toggleAuto; wind
 window.approveDraft=approveDraft; window.retryDraft=retryDraft; window.editInput=editInput;
 window.editOrSave=editOrSave; window.editOrSaveCorrection=editOrSaveCorrection;
 window.dismissDraft=dismissDraft; window.bulkDismiss=bulkDismiss; window.setTone=setTone; window.retrySave=retrySave;
+window.openPaste=openPaste; window.pasteSave=pasteSave; window.pasteDismissOnly=pasteDismissOnly; window.pasteClose=pasteClose; window.skipPaste=skipPaste;
 window.approveTask=approveTask; window.rejectTask=rejectTask; window.toggleTaskDone=toggleTaskDone; window.toggleGroup=toggleGroup; window.generateInstant=generateInstant; window.dismissGenErr=dismissGenErr;
 window.approveSugg=approveSugg; window.rejectSugg=rejectSugg; window.gotoSuggTab=gotoSuggTab;
 window.approveReview=approveReview; window.skipReview=skipReview;
