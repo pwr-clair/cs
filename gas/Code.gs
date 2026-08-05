@@ -1956,6 +1956,54 @@ function diagListLabels() {
   Logger.log('확인 포인트: 대소문자만 다른 쌍(cs/booking vs CS/booking)이 같이 있으면 양분 사고 → 클코에 보고. CS/적재됨은 코드가 쓰는 정상 처리완료함.');
 }
 
+// ══════════════════════════════════════════════════════════════════
+// (진단) 알림메일에 호스트(익스트라넷) 답변이 실리는지 실측 — probeHostReplyEvidence()  [2026-08-05]
+//   M1 검증 ③ 미기록분 보완. 실리면 익스트라넷 답변 자동 수확(붙여넣기 불요)이 가능해짐.
+//   cs/inbox의 보존된 raw.body를 스캔(읽기 전용, urlfetch 1회, Gmail 0회, 데이터 변경 없음):
+//     ① 회신 흔적 마커 라인 집계(you replied/your reply/답장/回复 등)
+//     ② 같은 스레드에 알림 2건 이상 → 후속 알림 원문 덤프(채널별 1개) — 히스토리가 실리면 여기 보임
+//     ③ 채널별 최신 게스트 메시지 알림 원문 덤프 — 기준 포맷 확인용
+//   실행: GAS 에디터에서 probeHostReplyEvidence 선택 → 실행 → 실행 로그 전체를 클로드에 붙여넣기(판독·파서 설계는 클로드 몫).
+// ══════════════════════════════════════════════════════════════════
+function probeHostReplyEvidence() {
+  var inbox = fbGet('cs/inbox') || {};
+  var items = [];
+  for (var k in inbox) { var r = inbox[k]; if (r && r.raw && r.raw.body) items.push(r); }
+  items.sort(function (a, b) { return String(b.receivedAt || '').localeCompare(String(a.receivedAt || '')); });
+  Logger.log('===== 호스트 답변 동봉 실측: raw 보존 ' + items.length + '건 =====');
+
+  // ① 회신 흔적 마커 스캔 (최신 200건)
+  var markers = /(you (replied|responded|said)|your (reply|response)|replied to|reply from|host reply|response from (the )?(host|property)|답장|답변을 보냈|회신|返信|回复)/i;
+  var hit = 0, scanned = Math.min(items.length, 200), lines = [];
+  for (var i = 0; i < scanned; i++) {
+    var ls = String(items[i].raw.body || '').split('\n'), found = [];
+    for (var j = 0; j < ls.length; j++) if (markers.test(ls[j])) found.push(ls[j].trim().slice(0, 120));
+    if (found.length) { hit++; if (lines.length < 20) lines.push('· ' + (items[i].source || '?') + ' ' + (items[i].receivedAt || '') + ' | ' + found.join(' ⁄ ')); }
+  }
+  Logger.log('① 마커 스캔: ' + scanned + '건 중 회신 흔적 ' + hit + '건' + (hit ? '\n' + lines.join('\n') : ' — 없음(알림메일이 호스트 답변을 안 실어줄 가능성 높음)'));
+
+  // ② 같은 스레드 알림 2건 이상 → 후속 알림 원문(채널별 최신 1개) — 이전 대화가 실리는지 직접 확인
+  var byThread = {};
+  for (var i = 0; i < items.length; i++) { var t = items[i].threadId; if (t) (byThread[t] = byThread[t] || []).push(items[i]); }
+  var dumped = {};
+  for (var t in byThread) {
+    var arr = byThread[t]; if (arr.length < 2) continue;              // items가 최신순이라 arr[0]=후속(최신) 알림
+    var src = arr[0].source || '?'; if (dumped[src]) continue;
+    dumped[src] = true;
+    Logger.log('② [' + src + '] 같은 스레드 알림 ' + arr.length + '건 — 후속 알림 원문(3000자):\n제목: ' + (arr[0].raw.subject || '') + '\n' + String(arr[0].raw.body || '').slice(0, 3000));
+  }
+  if (!Object.keys(dumped).length) Logger.log('② 같은 스레드 알림 2건 이상인 예 없음 — 게스트 재메시지 케이스 부재 또는 threadId 미기록.');
+
+  // ③ 채널별 최신 1건 기준 포맷 (notice 제외 게스트 메시지)
+  var base = {};
+  for (var i = 0; i < items.length; i++) {
+    var src = items[i].source || '?';
+    if (base[src] || items[i].notice) continue;
+    base[src] = true;
+    Logger.log('③ [' + src + '] 최신 게스트 메시지 알림 원문(2000자):\n제목: ' + (items[i].raw.subject || '') + '\n' + String(items[i].raw.body || '').slice(0, 2000));
+  }
+}
+
 // ---- 매핑: cs/inbox.bookingId(원번호) ↔ pendingBookings.channelBookingId ----
 var _pendingCache = null;
 function loadPending_() {
