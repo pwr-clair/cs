@@ -2030,7 +2030,15 @@ function agodaHarvestNoise_(t) {
     || t.indexOf('이 문의 사항에 답변하기') >= 0 || t.indexOf('다른 이메일에 답장하는 것과') >= 0
     || t.indexOf('저희가 처리하도록') >= 0 || t.indexOf('다운로드') >= 0
     || t.indexOf('투숙객과 실시간으로') >= 0 || t.indexOf('호텔 파트너를 위한') >= 0
+    || t.indexOf('24시간 연중무휴') >= 0 || t.indexOf('아고다가 통제할') >= 0 || /^중요\s*[:：]/.test(t) // 푸터 고지문(1차 백로그 실측에서 Q/A 오염 확인)
     || /^예약\s*번호\s*[:：]/.test(t);
+}
+
+// 수확 전용 잡담 판정 — isTrivialMessage_ + 늘임말(Yesss/Thank youuuu)·수긍류 확장(1차 백로그 실측 오염 쌍 대응)
+function agodaHarvestTrivial_(s) {
+  if (isTrivialMessage_(s)) return true;
+  var t = normQ_(s).replace(/(.)\1{2,}/g, '$1'); // 늘임말 축약: yesss→yes, youuuu→you
+  return /^(yes|yeah|yep|no|nope|sure|great|perfect|nice|good|got it|will do|thank you|thanks?)[\s!.~,]*$/i.test(t);
 }
 
 // 히스토리 → [{who:'guest'|'host', text}] (이메일 순서 = 최신 먼저). 헤더 뒤 첫 빈 줄까지는
@@ -2068,14 +2076,17 @@ function agodaHarvestPairs_(body) {
   var pairs = [];
   for (var g = 1; g < groups.length && pairs.length < 10; g++) {
     if (groups[g].who !== 'host' || groups[g - 1].who !== 'guest') continue;
-    var q = groups[g - 1].texts.join('\n\n').slice(0, 600);
+    var guestTexts = [];
+    for (var t = 0; t < groups[g - 1].texts.length; t++)
+      if (!agodaHarvestTrivial_(groups[g - 1].texts[t])) guestTexts.push(groups[g - 1].texts[t]); // 잡담(Yesss/Thank youuu)만으로 된 질문 방지
+    var q = guestTexts.join('\n\n').slice(0, 600);
     var hostTexts = [];
     for (var h = 0; h < groups[g].texts.length; h++) {
       if (/passcode\s*[:：]|room\s*[:：]|비밀번호\s*[:：]|출입\s*코드/i.test(groups[g].texts[h])) continue;
       hostTexts.push(groups[g].texts[h]);
     }
     var a = hostTexts.join('\n\n').slice(0, 1200);
-    if (!a || a.length < 4 || isTrivialMessage_(q)) continue;
+    if (!q || !a || a.length < 4 || agodaHarvestTrivial_(q)) continue;
     pairs.push({ q: q, a: a });
   }
   return pairs;
@@ -2104,6 +2115,11 @@ function harvestAgodaToCorpus_(raw, bookingId) {
 // (수동 1회) 백로그 수확 — cs/inbox에 이미 쌓인 아고다 raw 전량에서 쌍 채집 → corpus 일괄 적재.
 //   비용: fbGet 1회 + 100키 단위 fbUpdate 수 회. 실행: GAS에서 harvestAgodaBacklog 실행 → 로그 확인.
 function harvestAgodaBacklog() {
+  // 재실행 안전(2026-08-05): 기존 agoda-history 적재분을 전부 지우고 다시 수확 — 파서 개선이 전량 반영되는 전체 재구축.
+  var existing = fbGet('cs/corpus') || {}, wipe = {}, wiped = 0;
+  for (var w in existing) if (existing[w] && existing[w].src === 'agoda-history') { wipe[w] = null; wiped++; }
+  if (wiped) fbUpdate('cs/corpus', wipe); // RTDB patch에서 null = 삭제
+
   var inbox = fbGet('cs/inbox') || {};
   var patch = {}, emails = 0, samples = [];
   for (var k in inbox) {
@@ -2124,7 +2140,7 @@ function harvestAgodaBacklog() {
     for (var j = c; j < Math.min(c + 100, keys.length); j++) chunk[keys[j]] = patch[keys[j]];
     fbUpdate('cs/corpus', chunk); writes++;
   }
-  Logger.log('아고다 백로그 수확: 메일 ' + emails + '건 → 쌍 ' + keys.length + '개(중복 제거 후) 적재, 쓰기 ' + writes + '회\n샘플 5개(품질 확인용):\n' + samples.join('\n---\n'));
+  Logger.log('아고다 백로그 수확(재구축): 기존 삭제 ' + wiped + '개 → 메일 ' + emails + '건 → 쌍 ' + keys.length + '개(중복 제거 후) 적재, 쓰기 ' + writes + '회\n샘플 5개(품질 확인용):\n' + samples.join('\n---\n'));
 }
 
 // ---- 매핑: cs/inbox.bookingId(원번호) ↔ pendingBookings.channelBookingId ----

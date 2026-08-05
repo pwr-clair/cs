@@ -32,7 +32,13 @@ function agodaHarvestNoise_(t) {
     || t.indexOf('이 문의 사항에 답변하기') >= 0 || t.indexOf('다른 이메일에 답장하는 것과') >= 0
     || t.indexOf('저희가 처리하도록') >= 0 || t.indexOf('다운로드') >= 0
     || t.indexOf('투숙객과 실시간으로') >= 0 || t.indexOf('호텔 파트너를 위한') >= 0
+    || t.indexOf('24시간 연중무휴') >= 0 || t.indexOf('아고다가 통제할') >= 0 || /^중요\s*[:：]/.test(t)
     || /^예약\s*번호\s*[:：]/.test(t);
+}
+function agodaHarvestTrivial_(s) {
+  if (isTrivialMessage_(s)) return true;
+  var t = normQ_(s).replace(/(.)\1{2,}/g, '$1');
+  return /^(yes|yeah|yep|no|nope|sure|great|perfect|nice|good|got it|will do|thank you|thanks?)[\s!.~,]*$/i.test(t);
 }
 function agodaHistoryBlocks_(body) {
   var lines = String(body || '').split('\n');
@@ -64,14 +70,17 @@ function agodaHarvestPairs_(body) {
   var pairs = [];
   for (var g = 1; g < groups.length && pairs.length < 10; g++) {
     if (groups[g].who !== 'host' || groups[g - 1].who !== 'guest') continue;
-    var q = groups[g - 1].texts.join('\n\n').slice(0, 600);
+    var guestTexts = [];
+    for (var t = 0; t < groups[g - 1].texts.length; t++)
+      if (!agodaHarvestTrivial_(groups[g - 1].texts[t])) guestTexts.push(groups[g - 1].texts[t]);
+    var q = guestTexts.join('\n\n').slice(0, 600);
     var hostTexts = [];
     for (var h = 0; h < groups[g].texts.length; h++) {
       if (/passcode\s*[:：]|room\s*[:：]|비밀번호\s*[:：]|출입\s*코드/i.test(groups[g].texts[h])) continue;
       hostTexts.push(groups[g].texts[h]);
     }
     var a = hostTexts.join('\n\n').slice(0, 1200);
-    if (!a || a.length < 4 || isTrivialMessage_(q)) continue;
+    if (!q || !a || a.length < 4 || agodaHarvestTrivial_(q)) continue;
     pairs.push({ q: q, a: a });
   }
   return pairs;
@@ -182,5 +191,33 @@ ok('쌍1 답변에서 Passcode 메시지 제외', pairs.length === 3 && pairs[0]
 ok('쌍3 = 사과 → 안심 답변', pairs.length === 3 && pairs[2].q.indexOf('間違って別のホテル') >= 0 && pairs[2].a.indexOf('謝らないでください') >= 0);
 ok('빈 본문 → 쌍 0개(안전)', agodaHarvestPairs_('').length === 0);
 ok('히스토리 없는 알림(새 메시지만) → 쌍 0개', agodaHarvestPairs_('  KIM 8월 05, 09:00 오전 ICT\n  예약 번호: 123456\n  \n\n감기약 있나요?\nDid you know?') .length === 0);
+
+// ---- 1차 백로그 실측에서 나온 오염 케이스 (2026-08-05 로그) ----
+var DIRTY = [ // 실물처럼 최신 메시지가 먼저
+'  8월 03, 02:11 오후 ICT Paradise Walk Residence   ',
+'  ',
+'  내일 이른 체크인은 오후 2시쯤 가능할 것 같습니다.   ',
+'  ',
+'  PARK 8월 03, 02:10 오후 ICT   ',
+'  ',
+'  Thank youuuuu   ',
+'  ',
+'  8월 03, 02:05 오후 ICT Paradise Walk Residence   ',
+'  ',
+'  건물 바로 앞에 공항 셔틀버스 정류장이 있어요. 첫차는 아침 5시입니다.☺️   ',
+'중요: 이 기능을 통해 투숙객과 예약 공급업체 간에 직접적인 커뮤니케이션을 할 수 있습니다. ',
+'이러한 커뮤니케이션은 아고다가 통제할 수 없습니다. ',
+'  ',
+'  LEE 8월 03, 02:00 오후 ICT   ',
+'  ',
+'  提供机场接送服务的是吗 我早上五点半要到机场   ',
+'24시간 연중무휴 고객센터 ',
+'무시되어야 할 꼬리말 '
+].join('\n');
+var dp = agodaHarvestPairs_(DIRTY);
+ok('푸터 고지문이 Q에서 잘림', dp.length >= 1 && dp[0].q.indexOf('24시간') < 0 && dp[0].q.indexOf('机场接送') >= 0);
+ok('푸터 고지문이 A에서 잘림', dp.length >= 1 && dp[0].a.indexOf('중요') < 0 && dp[0].a.indexOf('셔틀버스') >= 0);
+ok('늘임말 잡담(Thank youuuuu)만 있는 쌍 제거', dp.length === 1);
+ok('Yesss도 잡담 판정', agodaHarvestTrivial_('Yesss') && agodaHarvestTrivial_('Thank youuuuu') && !agodaHarvestTrivial_('Yes, but where is the shuttle stop?'));
 
 print(pass + ' PASS / ' + fail + ' FAIL');
