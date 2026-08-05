@@ -40,6 +40,13 @@ function agodaHarvestTrivial_(s) {
   var t = normQ_(s).replace(/(.)\1{2,}/g, '$1');
   return /^(yes|yeah|yep|no|nope|sure|great|perfect|nice|good|got it|will do|thank you|thanks?)[\s!.~,]*$/i.test(t);
 }
+function agodaAutoTemplate_(t) {
+  return /^Dear guest,/i.test(String(t || ''))
+    || t.indexOf('Check-in Reminder') >= 0 || t.indexOf('Check-out Reminder') >= 0
+    || t.indexOf('Check-in Info') >= 0
+    || t.indexOf('■ 체크') >= 0
+    || t.indexOf('────') >= 0;
+}
 function agodaHistoryBlocks_(body) {
   var lines = String(body || '').split('\n');
   var blocks = [], cur = null, skipping = false;
@@ -77,6 +84,7 @@ function agodaHarvestPairs_(body) {
     var hostTexts = [];
     for (var h = 0; h < groups[g].texts.length; h++) {
       if (/passcode\s*[:：]|room\s*[:：]|비밀번호\s*[:：]|출입\s*코드/i.test(groups[g].texts[h])) continue;
+      if (agodaAutoTemplate_(groups[g].texts[h])) continue;
       hostTexts.push(groups[g].texts[h]);
     }
     var a = hostTexts.join('\n\n').slice(0, 1200);
@@ -219,5 +227,26 @@ ok('푸터 고지문이 Q에서 잘림', dp.length >= 1 && dp[0].q.indexOf('24�
 ok('푸터 고지문이 A에서 잘림', dp.length >= 1 && dp[0].a.indexOf('중요') < 0 && dp[0].a.indexOf('셔틀버스') >= 0);
 ok('늘임말 잡담(Thank youuuuu)만 있는 쌍 제거', dp.length === 1);
 ok('Yesss도 잡담 판정', agodaHarvestTrivial_('Yesss') && agodaHarvestTrivial_('Thank youuuuu') && !agodaHarvestTrivial_('Yes, but where is the shuttle stop?'));
+
+// ---- 2차 백로그 실측: HK 자동 안내문이 답변 꼬리에 병합되던 케이스 ----
+var TPL = [ // 최신 먼저: [자동 안내문] → [진짜 답변] → [게스트 질문]
+'  8월 03, 03:00 오후 ICT Paradise Walk Residence   ',
+'  ',
+'  Dear guest,',
+'',
+'Thank you for choosing Paradise Walk Residence!',
+'Please note the check-in procedure below.   ',
+'  ',
+'  8월 03, 02:05 오후 ICT Paradise Walk Residence   ',
+'  ',
+'  건물 바로 앞에 공항 셔틀버스 정류장이 있어요. 첫차는 아침 5시입니다.☺️   ',
+'  ',
+'  LEE 8월 03, 02:00 오후 ICT   ',
+'  ',
+'  提供机场接送服务的是吗 我早上五点半要到机场   '
+].join('\n');
+var tp = agodaHarvestPairs_(TPL);
+ok('자동 안내문(Dear guest) 답변에서 제외', tp.length === 1 && tp[0].a.indexOf('셔틀버스') >= 0 && tp[0].a.indexOf('Dear guest') < 0);
+ok('📅 리마인더 템플릿 판정', agodaAutoTemplate_('📅 Check-in Reminder — Today is your arrival day!') && agodaAutoTemplate_('■ 체크아웃 안내 ──────────') && !agodaAutoTemplate_('셔틀은 5시부터 다녀요, Check-in은 3시입니다'));
 
 print(pass + ' PASS / ' + fail + ' FAIL');

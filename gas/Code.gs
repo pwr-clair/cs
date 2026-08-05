@@ -2034,6 +2034,16 @@ function agodaHarvestNoise_(t) {
     || /^예약\s*번호\s*[:：]/.test(t);
 }
 
+// HK 자동 안내문(s1~s6 메일)이 아고다 스레드에 호스트 메시지로 릴레이돼 답변에 병합됨(2차 백로그 실측) — 코퍼스 제외.
+//   마커: 실측 샘플('Dear guest,'·'📅 Check-in Reminder') + HK 제목('Check-in Info') + 템플릿 박스 구분선(────).
+function agodaAutoTemplate_(t) {
+  return /^Dear guest,/i.test(String(t || ''))
+    || t.indexOf('Check-in Reminder') >= 0 || t.indexOf('Check-out Reminder') >= 0
+    || t.indexOf('Check-in Info') >= 0
+    || t.indexOf('■ 체크') >= 0
+    || t.indexOf('────') >= 0;
+}
+
 // 수확 전용 잡담 판정 — isTrivialMessage_ + 늘임말(Yesss/Thank youuuu)·수긍류 확장(1차 백로그 실측 오염 쌍 대응)
 function agodaHarvestTrivial_(s) {
   if (isTrivialMessage_(s)) return true;
@@ -2083,6 +2093,7 @@ function agodaHarvestPairs_(body) {
     var hostTexts = [];
     for (var h = 0; h < groups[g].texts.length; h++) {
       if (/passcode\s*[:：]|room\s*[:：]|비밀번호\s*[:：]|출입\s*코드/i.test(groups[g].texts[h])) continue;
+      if (agodaAutoTemplate_(groups[g].texts[h])) continue; // HK 자동 안내문 — 클라라 육성 답변 아님
       hostTexts.push(groups[g].texts[h]);
     }
     var a = hostTexts.join('\n\n').slice(0, 1200);
